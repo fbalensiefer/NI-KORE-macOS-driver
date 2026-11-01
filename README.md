@@ -341,12 +341,6 @@ Die im Log beobachteten Variationen sind ein guter Ausgangspunkt für die weiter
 | Native macOS-App | Noch nicht implementiert |
 | Stabilität / Langzeittest | Noch offen |
 
----
-
-## 10. Geplanter weiterer Entwicklungsablauf
-
-Bitte arbeite schrittweise und priorisiere zunächst die technische Funktionsfähigkeit.
-
 ### Phase 1: Linux-Initialisierung vollständig verstehen
 
 Untersuche den Linux-Quellcode, insbesondere:
@@ -456,22 +450,6 @@ Denkbare Architektur:
 
 Ein Kernel Extension Driver sollte nach Möglichkeit vermieden werden. Eine User-Space-Lösung ist vorzuziehen, sofern sie die erforderliche Funktionalität zuverlässig abbilden kann.
 
----
-
-## 11. Arbeitsweise und Anforderungen an Claude
-
-Bitte übernimm die Rolle eines erfahrenen macOS-Systementwicklers mit Kenntnissen in:
-
-- USB-Protokollen
-- libusb
-- macOS IOKit / USB
-- C und Objective-C bzw. Swift
-- CoreMIDI
-- Reverse Engineering
-- Linux-Kerneltreibern
-
-Arbeite systematisch und evidenzbasiert.
-
 ### Besonders wichtig
 
 1. **Keine unbelegten Annahmen:** Unterscheide klar zwischen gesicherten Erkenntnissen, Hypothesen und offenen Fragen.
@@ -484,25 +462,3 @@ Arbeite systematisch und evidenzbasiert.
 8. **Bestehende funktionierende Kommunikation nicht zerstören:** Die aktuelle libusb-Kommunikation ist bereits ein wichtiger Fortschritt.
 9. **Keine erfundenen Dateien oder Downloadlinks:** Wenn du eine Datei erstellst, muss sie tatsächlich vorhanden und überprüfbar sein.
 10. **Fehleranalyse anhand realer Logs:** Bei neuen Logs die tatsächlichen Pakettypen, Längen und Datenänderungen systematisch analysieren.
-
----
-
-## 12. Konkreter Arbeitsauftrag für den neuen Chat
-
-Beginne nicht mit einer allgemeinen Erklärung zu USB oder macOS.
-
-Setze direkt beim aktuellen technischen Stand an.
-
-**Erster Auftrag:**
-
-Analysiere die KORE-1-spezifische Initialisierung des Linux-Treibers `snd-usb-caiaq`, insbesondere die Funktion bzw. den Aufruf von `snd_usb_caiaq_set_auto_msg()` in Verbindung mit `input.c`.
-
-Finde heraus, welche konkreten AUTO_MSG-Parameter der Linux-Treiber für den KORE 1 verwendet und wie dadurch die drei Eingabeströme `READ_ERP`, `READ_ANALOG` und `READ_IO` aktiviert werden.
-
-Leite daraus eine konkrete, möglichst risikoarme Teststrategie für unser bestehendes macOS-Programm `~/kore-monitor.c` ab.
-
-Danach soll eine verbesserte vollständige Version des Monitors erstellt werden, die alle drei Eingabepakettypen erkennt und dekodiert.
-
-**Aktueller Ausgangspunkt:** Das Gerät funktioniert über libusb, GET_DEVICE_INFO antwortet und nach AUTO_MSG empfängt das Programm kontinuierlich 33-Byte-READ_ERP-Pakete (`0x02`). In einem vollständigen Mitschnitt wurden 873 solcher Pakete, aber keine READ_ANALOG- (`0x03`) oder READ_IO-Pakete (`0x04`) beobachtet.
-
-Das Ziel bleibt eine vollständig funktionsfähige native macOS-Lösung für den Native Instruments KORE 1 mit CoreMIDI-Ausgabe.
