@@ -1,28 +1,29 @@
 # Next development steps
 
-As of November 2, 2026, native silence streaming and repeated near-440 Hz analog
-playback are verified on the connected KORE1. See
-[TONE-PLAYBACK-RESULTS.md](TONE-PLAYBACK-RESULTS.md) for evidence and limits.
+As of November 2, 2026, repeated native streaming and analog playback are verified.
+Direct HAL MAYA44 capture now stores exactly ten seconds with zero timestamp gaps.
+Short relative measurements suggest a KORE clock about +200 ppm versus the host.
+See [capture/clock evidence](CAPTURE-CONTINUITY.md).
 
-1. **Fix measurement continuity.** AVFoundation ten-second captures contain about
-   9.1–9.25 seconds of stored PCM. Establish a capture path with reliable sample
-   counts/timestamps before assessing clock accuracy, dropouts or distortion.
-2. **Validate audio quality and routing.** Repeat bounded isolated-channel tests
-   with the verified capture path. Current headphone-chain evidence maps logical
-   output 3 to MAYA44 input 2 and output 4 to input 1; physical jack assignments
-   and other output paths are not yet established.
-3. **Add a bounded PCM application feed.** Keep native USB scheduling independent
-   of file/FIFO blocking, handle partial frames and underflow explicitly, and test
-   rate matching. The archived FIFO experiment is not a finished playback feed.
-4. **Unify interface ownership.** The native audio prototype and libusb controller
-   bridge cannot run together. Preserve working MIDI/LED/LCD while implementing
-   a shared transport before claiming simultaneous audio/controller support.
-5. **Design CoreAudio integration.** Research current supported APIs, signing and
-   deployment requirements. No HAL driver or system audio device is installed or
-   implemented by the current prototype.
-6. **Investigate KORE audio input capture.** Device-reported inputs and completed
-   ISO IN transfers alone do not establish usable captured PCM.
+1. **Keep the CoreAudio output prototype local**, as requested. A signed bundle,
+   PCM property IPC, realtime-safe queue, native prefetch/packer and render client
+   build and pass offline tests. Real HAL loading and application compatibility
+   remain unverified; installation requires fresh approval.
+2. **Validate the implemented adaptive rate matcher before sustained playback.**
+   It passes 15 simulated minutes and a bounded hardware PCM run. The current
+   linear interpolator needs full-band DSP evaluation; three-second live tests
+   do not establish long-duration clock lock. See [rate matching](RATE-MATCHING.md).
+3. **Improve analog measurement SNR.** At the authorized low level, residual noise
+   is about 6 dB above tone RMS. Do not infer a DAC distortion/dynamic-range spec
+   from that measurement or automatically alter physical gain.
+4. **Validate host integration and routing** when installation is authorized. Use
+   the gap-free recorder and the capped virtual-output render test. Confirm app
+   format negotiation, underrun/overflow behavior, timestamps and clean teardown.
+5. **Unify interface ownership** before simultaneous MIDI and audio; native USB
+   and the compatibility libusb controller still require exclusive interface 0.
+6. **Implement KORE input PCM capture** only after validating its alignment/check
+   state. MAYA44 capture is a measurement path, not KORE audio-input support.
 
-Offline changes and checks do not require hardware. Live tests require a verified
-physical setup and explicit authorization; keep silence and tone tests distinct.
-Never treat USB completion alone as proof of analog output or audio quality.
+The user authorized bounded KORE silence/tone tests and MAYA44 recording. They
+chose not to install or restart CoreAudio for the new output prototype. No CoreAudio
+server change has been made.

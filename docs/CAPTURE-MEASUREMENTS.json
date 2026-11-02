@@ -1,0 +1,102 @@
+[
+  {
+    "run": "native-tone-ch3-20261102-153747-040973",
+    "timing": {
+      "stop_status": 0,
+      "target_frames": 441000,
+      "destroy_status": 0,
+      "nominal_rate": 44100,
+      "host_measured_rate": 44099.71534339611,
+      "invalid_callbacks": 0,
+      "timestamp_gaps": 0,
+      "channels": 4,
+      "start_status": 0,
+      "callbacks": 862,
+      "timestamped_callbacks": 862,
+      "max_gap_frames": 0,
+      "observed_frames": 441344,
+      "sample_duration_s": 10,
+      "stored_frames": 441000,
+      "device": {
+        "id": 98,
+        "uid": "AppleUSBAudioEngine:ESI Audiotechnik GmbH:MAYA44 USB+:1100000:2,1",
+        "name": "MAYA44 USB+",
+        "input_channels": 4
+      },
+      "timestamp_span_s": 9.996255,
+      "capture_contiguous": true
+    },
+    "quality": {
+      "capture_channel": 2,
+      "capture_contiguous": true,
+      "capture_frames": 441000,
+      "sample_rate": 44100,
+      "fundamental_rms_dbfs": -82.8355843049168,
+      "residual_rms_dbfs": -76.617155671083,
+      "signal_over_residual_db": -6.218428633833795,
+      "estimated_tone_hz_at_nominal_capture_rate": 440.09,
+      "host_corrected_tone_hz": 440.0871593078275,
+      "relative_frequency_error_ppm": 198.0893359716518,
+      "capture_clock_relative_host_ppm": -6.45479827421358,
+      "window_start_s": 1.6248526077097505,
+      "window_duration_s": 0.5,
+      "clipped_samples": 0,
+      "limitations": "Short low-level analog loopback; host-relative clock estimate, not calibrated absolute clock or isolated DAC distortion.",
+      "usb_payload_inferred_rate": 48009.345794392524,
+      "usb_payload_relative_host_ppm": 194.70404984422984,
+      "usb_payload_predicted_tone_hz": 440.0856697819314,
+      "usb_packet_quantization_ppm": 76.49087672452158
+    },
+    "wav_sha256": "83f59852f4aba412671c044da9ad477ebb952691e2e512289250d95b4e45c75c"
+  },
+  {
+    "run": "native-tone-ch3-20261102-154853-554792",
+    "timing": {
+      "stop_status": 0,
+      "target_frames": 441000,
+      "destroy_status": 0,
+      "nominal_rate": 44100,
+      "host_measured_rate": 44099.80817297714,
+      "invalid_callbacks": 0,
+      "timestamp_gaps": 0,
+      "channels": 4,
+      "start_status": 0,
+      "callbacks": 862,
+      "timestamped_callbacks": 862,
+      "max_gap_frames": 0,
+      "observed_frames": 441344,
+      "sample_duration_s": 10,
+      "stored_frames": 441000,
+      "device": {
+        "id": 98,
+        "uid": "AppleUSBAudioEngine:ESI Audiotechnik GmbH:MAYA44 USB+:1100000:2,1",
+        "name": "MAYA44 USB+",
+        "input_channels": 4
+      },
+      "timestamp_span_s": 9.996233958,
+      "capture_contiguous": true
+    },
+    "quality": {
+      "capture_channel": 2,
+      "capture_contiguous": true,
+      "capture_frames": 441000,
+      "sample_rate": 44100,
+      "fundamental_rms_dbfs": -82.79071987382922,
+      "residual_rms_dbfs": -76.66871706920035,
+      "signal_over_residual_db": -6.12200280462888,
+      "estimated_tone_hz_at_nominal_capture_rate": 440.09,
+      "host_corrected_tone_hz": 440.0880856881068,
+      "relative_frequency_error_ppm": 200.1947456973241,
+      "capture_clock_relative_host_ppm": -4.349819112570152,
+      "window_start_s": 1.6248526077097505,
+      "window_duration_s": 0.5,
+      "clipped_samples": 0,
+      "limitations": "Short low-level analog loopback; host-relative clock estimate, not calibrated absolute clock or isolated DAC distortion.",
+      "usb_payload_inferred_rate": 48009.345794392524,
+      "usb_payload_relative_host_ppm": 194.70404984422984,
+      "usb_payload_predicted_tone_hz": 440.0856697819314,
+      "usb_packet_quantization_ppm": 76.49087672452158
+    },
+    "wav_sha256": "167069cbbcc626f5b3eeee09289e5a8dcf81d04b1c7e7607fa976625e002070a"
+  }
+]

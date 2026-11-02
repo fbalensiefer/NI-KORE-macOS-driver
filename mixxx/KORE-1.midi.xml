@@ -1,0 +1,155 @@
+<?xml version='1.0' encoding='utf-8'?>
+<MixxxControllerPreset schemaVersion="1" mixxxVersion="2.4">
+  <info>KORE 1: relative encoders, deck/play/cue buttons and optional LED/LCD feedback</info>
+  <controller id="KORE 1 Bridge">
+    <scriptfiles>
+      <file filename="KORE-1.js" functionprefix="Kore1" />
+    </scriptfiles>
+    <controls>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.encoder</key>
+        <status>0xB0</status>
+        <midino>0x14</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.encoder</key>
+        <status>0xB0</status>
+        <midino>0x15</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.encoder</key>
+        <status>0xB0</status>
+        <midino>0x16</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.encoder</key>
+        <status>0xB0</status>
+        <midino>0x17</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.encoder</key>
+        <status>0xB0</status>
+        <midino>0x18</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.encoder</key>
+        <status>0xB0</status>
+        <midino>0x19</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.encoder</key>
+        <status>0xB0</status>
+        <midino>0x1a</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.encoder</key>
+        <status>0xB0</status>
+        <midino>0x1b</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.chooseDeck</key>
+        <status>0x90</status>
+        <midino>0x24</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.chooseDeck</key>
+        <status>0x90</status>
+        <midino>0x26</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.playButton</key>
+        <status>0x90</status>
+        <midino>0x25</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.playButton</key>
+        <status>0x90</status>
+        <midino>0x28</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.cueButton</key>
+        <status>0x90</status>
+        <midino>0x27</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.cueButton</key>
+        <status>0x90</status>
+        <midino>0x29</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.cueButton</key>
+        <status>0x80</status>
+        <midino>0x27</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.cueButton</key>
+        <status>0x80</status>
+        <midino>0x29</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+    </controls>
+  </controller>
+</MixxxControllerPreset>

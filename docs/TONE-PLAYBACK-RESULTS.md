@@ -102,3 +102,10 @@ Next: establish continuous capture with trustworthy sample/timestamp accounting,
 then verify duration, distortion and channel routing with additional bounded
 measurements. A PCM application feed and CoreAudio integration can now be designed
 on top of the native transport, but neither is implemented by this milestone.
+
+
+## Subsequent capture correction
+
+The direct HAL recorder now captures exactly ten seconds with zero timestamp
+gaps in repeated tests. See [CAPTURE-CONTINUITY.md](CAPTURE-CONTINUITY.md) for
+new measurements and the remaining noise/clock calibration limitations.
