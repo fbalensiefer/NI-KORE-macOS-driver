@@ -1,36 +1,19 @@
-
 .DS_Store
 build/
 artifacts/
+actions-runner/
 __pycache__/
 *.pyc
 
-.DS_Store
-build/
-artifacts/
-__pycache__/
-*.pyc
+# Local measurements and diagnostics
+*.wav
+*.aiff
+logs/
 
-actions-runner/
-kore1-bridge
-capture-blackhole
-kore-usb-descriptors
-kore1-bridge.c.backup
-kore1-bridge.c.pre-*
-.DS_Store
-
-actions-runner/
-kore1-bridge
-capture-blackhole
-kore-usb-descriptors
-kore1-bridge.c.backup
-kore1-bridge.c.pre-*
-.DS_Store
-
-actions-runner/
-kore1-bridge
-capture-blackhole
-kore-usb-descriptors
-kore1-bridge.c.backup
-kore1-bridge.c.pre-*
-.DS_Store
+# Compatibility build outputs and private development snapshots
+/kore1-bridge
+/capture-blackhole
+/kore-usb-descriptors
+/kore1-bridge.c.backup
+/kore1-bridge.c.pre-*
+/kore1-bridge.c.backup-before-update

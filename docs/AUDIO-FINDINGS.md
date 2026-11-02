@@ -1,3 +1,7 @@
+> Historical research/handoff snapshot, superseded on November 2, 2026.
+> See the repository README and current native playback results. Old command
+> examples and status statements below are retained as evidence, not current instructions.
+
 # Audio reverse-engineering findings — 2026-11-02
 
 ## Confidence convention

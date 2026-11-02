@@ -9,3 +9,18 @@
 - Add documentation, build target, static tests and licensing/provenance notes.
 
 Prior development occurred as standalone `kore-midi-v3` through `v9` prototypes and is not represented as separate Git commits here.
+
+## Unreleased — 2026-11-02
+
+- Add native IOUSBHost transport, explicit zero-length transaction offsets,
+  bounded RX-driven silence streaming and fixed scheduling lead.
+- Verify repeated three-second streams, early cancellation, reopening and
+  low-level analog tone playback through the confirmed KORE/MAYA44 connection.
+- Add single-channel signed24 tone generation with fades and a hard amplitude cap.
+- Fix native discovery, speed validation, stale command callbacks and late
+  cancellation draining; retain existing controller code and compatibility bridge.
+- Add deterministic PCM/layout, deferred callback, sanitizer and capture-analyzer
+  regression checks. Document remaining capture discontinuities and missing
+  CoreAudio, application PCM feed and audio-input support.
+- Organize historical experiments with a path/hash manifest; keep binaries,
+  recordings, logs and the local Actions runner out of version control.

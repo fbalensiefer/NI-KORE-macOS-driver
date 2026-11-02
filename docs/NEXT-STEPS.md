@@ -1,23 +1,28 @@
-# Reproducible next steps / handoff
+# Next development steps
 
-1. **Preserve the exact current Mac working tree.** It contains local v0.23+ diagnostics absent from the public GitHub source. Commit it on a dedicated branch before attempting merges. Keep historical experiment snapshots separate.
-2. **Correct misleading reporting only:** replace the phrase `short packets are ignored by Linux PCM decoder` with `packets shorter than configured bpp (diagnostic classification only)`; do not alter USB behavior as part of this wording fix.
-3. **Review Linux state transitions:** compare `snd_usb_caiaq_pcm_prepare()`, `stream_start()`, `read_completed()`, and `read_in_urb_mode2()` against the bridge. Document any actual differences before patching.
-4. **Passive packet diagnosis:** capture raw first 64 IN packets with sequence numbers, timestamps, packet statuses and lengths. Test candidate checkbyte interpretations offline; do not treat unverified bits as firmware panic indicators.
-5. **Validate scheduling with a USB bus trace** if tooling permits; libusb callback intervals do not prove device-visible microframe placement.
-6. **Verify analog routing** independently and with safe gain, ideally through a known-good Linux CAIAQ baseline on the same hardware. Do not run loud or prolonged test tones.
-7. **Only after establishing a working PCM path**, integrate BlackHole/FIFO audio robustly, add drift management and tests, then consider CoreAudio HAL support.
+As of November 2, 2026, native silence streaming and repeated near-440 Hz analog
+playback are verified on the connected KORE1. See
+[TONE-PLAYBACK-RESULTS.md](TONE-PLAYBACK-RESULTS.md) for evidence and limits.
 
-## Suggested smoke tests (macOS)
+1. **Fix measurement continuity.** AVFoundation ten-second captures contain about
+   9.1–9.25 seconds of stored PCM. Establish a capture path with reliable sample
+   counts/timestamps before assessing clock accuracy, dropouts or distortion.
+2. **Validate audio quality and routing.** Repeat bounded isolated-channel tests
+   with the verified capture path. Current headphone-chain evidence maps logical
+   output 3 to MAYA44 input 2 and output 4 to input 1; physical jack assignments
+   and other output paths are not yet established.
+3. **Add a bounded PCM application feed.** Keep native USB scheduling independent
+   of file/FIFO blocking, handle partial frames and underflow explicitly, and test
+   rate matching. The archived FIFO experiment is not a finished playback feed.
+4. **Unify interface ownership.** The native audio prototype and libusb controller
+   bridge cannot run together. Preserve working MIDI/LED/LCD while implementing
+   a shared transport before claiming simultaneous audio/controller support.
+5. **Design CoreAudio integration.** Research current supported APIs, signing and
+   deployment requirements. No HAL driver or system audio device is installed or
+   implemented by the current prototype.
+6. **Investigate KORE audio input capture.** Device-reported inputs and completed
+   ISO IN transfers alone do not establish usable captured PCM.
 
-```sh
-./build.sh
-make check
-./run-midi.sh
-```
-
-Use audio diagnostics only after inspecting the available flags in the *current* local source. The research runs used options such as `--audio-duplex-silence --audio-linux-urbs --audio-hex-probe --audio-report-ms 1000`. These are **diagnostic**, not proof of playback. Stop with Ctrl+C.
-
-## Current status
-
-No verified audio playback. Do not publish a release advertised as a working KORE 1 audio driver.
+Offline changes and checks do not require hardware. Live tests require a verified
+physical setup and explicit authorization; keep silence and tone tests distinct.
+Never treat USB completion alone as proof of analog output or audio quality.
