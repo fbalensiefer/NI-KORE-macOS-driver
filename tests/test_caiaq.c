@@ -118,6 +118,42 @@ static void scheduler(void) {
     audio_send_silence_matching_rx(rx);assert(submits==before_failure+1 && !running && audio_failed && !audio_out_slots[0].busy);
     running=1;audio_failed=0;rx->iso_packet_desc[2].actual_length=513;
     audio_send_silence_matching_rx(rx);assert(submits==before_failure+1 && !running && audio_failed);
+    /* Exact logged failure from an IN callback: OUT failure must not rearm IN. */
+    running=1;audio_failed=0;rx->iso_packet_desc[2].actual_length=0;
+    rx->status=LIBUSB_TRANSFER_COMPLETED;rx->user_data=&audio_in_slots[0];
+    audio_in_slots[0].active=1;audio_in_count=1;
+    int before_rx=submits;on_audio_rx(rx);
+    assert(submits==before_rx+1 && !running && !audio_in_slots[0].active);
+    /* Each profile submits once, retains every descriptor, and stops on completion. */
+    for(unsigned profile=0;profile<CAIAQ_PROBE_COUNT;profile++) {
+        unsigned expected[8];size_t off[8],sum;
+        assert(!caiaq_probe_layout(profile,expected));
+        assert(caiaq_probe_id(caiaq_probe_names[profile])==(int)profile);
+        assert(!caiaq_layout(expected,8,4096,off,&sum));
+        audio_layout_probe=(int)profile;audio_layout_sent=audio_layout_completed=0;
+        running=1;audio_failed=0;audio_tx_errors=0;submit_result=0;audio_rx_matched_zero=0;
+        int before=submits;
+        audio_send_silence_matching_rx(rx);
+        assert(submits==before+1 && audio_layout_sent && out->length==(int)sum);
+        assert(!memcmp(submitted_lengths,expected,sizeof(expected)));
+        audio_send_silence_matching_rx(rx);assert(submits==before+1);
+        for(int i=0;i<8;i++) {
+            out->iso_packet_desc[i].status=LIBUSB_TRANSFER_COMPLETED;
+            out->iso_packet_desc[i].actual_length=expected[i];
+        }
+        out->status=LIBUSB_TRANSFER_COMPLETED;on_audio_tx(out);
+        assert(!running && audio_layout_completed && !audio_out_slots[0].busy);
+        audio_send_silence_matching_rx(rx);assert(submits==before+1);
+    }
+    audio_layout_probe=5;audio_layout_sent=audio_layout_completed=0;
+    running=1;audio_failed=0;submit_result=LIBUSB_ERROR_INVALID_PARAM;
+    int before_probe_failure=submits;
+    audio_send_silence_matching_rx(rx);
+    assert(submits==before_probe_failure+1 && audio_layout_sent && !running && !audio_layout_completed);
+    audio_send_silence_matching_rx(rx);assert(submits==before_probe_failure+1);
+    unsigned invalid[8];assert(caiaq_probe_layout(CAIAQ_PROBE_COUNT,invalid)==-1);
+    assert(caiaq_probe_id("unknown")==-1);
+    audio_layout_probe=-1;
     audio_out_slots[0].transfer=NULL;audio_out_slots[0].buffer=NULL;
     libusb_free_transfer(rx);libusb_free_transfer(out);
 }

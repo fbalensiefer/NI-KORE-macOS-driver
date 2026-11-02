@@ -29,6 +29,7 @@
 #include "audio/caiaq.h"
 static int audio_fixed96_silence=0, audio_init_only=0, audio_dry_run=0, audio_failed=0;
 static unsigned audio_duration_ms=5000;
+static int audio_layout_probe=-1, audio_layout_sent=0, audio_layout_completed=0;
 static double audio_max_amplitude=0.00025;
 static int audio_tone_channel=1;
 
@@ -357,6 +358,13 @@ static void LIBUSB_CALL on_audio_tx(struct libusb_transfer *t) {
         fprintf(stderr,"AUDIO OUT transfer status=%d\n",t->status);audio_failed=1;running=0;
     }
     if(slot) slot->busy=0;
+    if(audio_layout_probe>=0) {
+        if(t->status==LIBUSB_TRANSFER_COMPLETED && !audio_failed) audio_layout_completed=1;
+        printf("AUDIO LAYOUT result: profile=%s status=%d completed=%d errors=%llu; stopping\n",
+            caiaq_probe_names[audio_layout_probe],t->status,audio_layout_completed,
+            (unsigned long long)audio_tx_errors);
+        running=0;
+    }
     /* Independent transmit clock: re-submit only after the same slot completes.
      * No allocation, no duplicate submission, and never reuse an in-flight buffer. */
     if(audio_tx_independent && running && slot && t->status==LIBUSB_TRANSFER_COMPLETED) {
@@ -376,7 +384,7 @@ static void LIBUSB_CALL on_audio_tx(struct libusb_transfer *t) {
     }
 }
 static void audio_send_silence_matching_rx(struct libusb_transfer *rx) {
-    if(!audio_duplex || audio_tx_independent) return;
+    if(!audio_duplex || audio_tx_independent || (audio_layout_probe>=0 && audio_layout_sent)) return;
     struct audio_out_slot *slot=NULL;
     for(int k=0;k<AUDIO_OUT_POOL;k++) {
         unsigned i=(audio_out_next+(unsigned)k)%AUDIO_OUT_POOL;
@@ -393,6 +401,7 @@ static void audio_send_silence_matching_rx(struct libusb_transfer *rx) {
         lengths[i]=(audio_sweep_176 || audio_single_176 || audio_out_fixed)?
             (unsigned)audio_bpp:rx->iso_packet_desc[i].actual_length;
     }
+    if(audio_layout_probe>=0) caiaq_probe_layout((unsigned)audio_layout_probe,lengths);
     if(caiaq_layout(lengths,AUDIO_PACKETS,AUDIO_PACKETS*AUDIO_PACKET_SIZE,offsets,&total)) {
         fprintf(stderr,"AUDIO invalid RX layout; stopping\n");audio_failed=1;running=0;return;
     }
@@ -422,7 +431,7 @@ static void audio_send_silence_matching_rx(struct libusb_transfer *rx) {
     /* Diagnostic guard: reject incomplete RX-derived ISO batches rather than
      * passing zero-length packet descriptors to the macOS libusb backend.
      * Fixed-length mode remains unchanged. */
-    if(!audio_rx_matched_zero && !audio_out_fixed && !audio_sweep_176 && !audio_single_176) {
+    if(audio_layout_probe<0 && !audio_rx_matched_zero && !audio_out_fixed && !audio_sweep_176 && !audio_single_176) {
         for(int i=0;i<AUDIO_PACKETS;i++) {
             if(slot->transfer->iso_packet_desc[i].length==0) {
                 audio_tx_skipped++;
@@ -431,6 +440,12 @@ static void audio_send_silence_matching_rx(struct libusb_transfer *rx) {
         }
     }
     slot->transfer->length=(int)offset;
+    if(audio_layout_probe>=0) {
+        audio_layout_sent=1; /* a rejected native submission is never retried */
+        printf("AUDIO LAYOUT submit: profile=%s total=%u lengths=",caiaq_probe_names[audio_layout_probe],offset);
+        for(int i=0;i<AUDIO_PACKETS;i++) printf("%s%u",i?",":"",lengths[i]);
+        puts("; one synthetic silence batch, not RX-matched playback");fflush(stdout);
+    }
     slot->busy=1;
     int r=libusb_submit_transfer(slot->transfer);
     if(r) {
@@ -517,7 +532,7 @@ static int audio_prepare_out(libusb_device_handle *handle) {
             AUDIO_PACKETS*AUDIO_PACKET_SIZE,AUDIO_PACKETS,on_audio_tx,slot,0);
     }
     printf("AUDIO duplex enabled: %d-slot asynchronous silent OUT pool on EP 0x06; mode=%s.\n",
-           AUDIO_OUT_POOL,audio_single_176?"RX-paced fixed176 single-channel":audio_sweep_176?"RX-paced fixed176 four-channel sweep":audio_out_fixed?(audio_out_96?"FIXED 96-byte experiment":"FIXED 176-byte diagnostic"):audio_rx_matched_zero?"RX-length matched, zero descriptors EXPERIMENTAL":"legacy matched IN lengths");
+           AUDIO_OUT_POOL,audio_single_176?"RX-paced fixed176 single-channel":audio_sweep_176?"RX-paced fixed176 four-channel sweep":audio_out_fixed?(audio_out_96?"FIXED 96-byte experiment":"FIXED 176-byte diagnostic"):audio_layout_probe>=0?"one-shot synthetic layout":audio_rx_matched_zero?"RX-length matched, zero descriptors EXPERIMENTAL":"legacy matched IN lengths");
     return 0;
 }
 
@@ -560,10 +575,12 @@ static void LIBUSB_CALL on_audio_rx(struct libusb_transfer *t) {
         }
         if(running) {
             audio_send_silence_matching_rx(t);
-            int r=libusb_submit_transfer(t);
-            if(r==0) return;
-            fprintf(stderr,"AUDIO rearm: %s\n",libusb_error_name(r));
-            audio_failed=1;running=0;
+            if(running) {
+                int r=libusb_submit_transfer(t);
+                if(r==0) return;
+                fprintf(stderr,"AUDIO rearm: %s\n",libusb_error_name(r));
+                audio_failed=1;running=0;
+            }
         }
     } else if(t->status==LIBUSB_TRANSFER_CANCELLED) {
         /* Expected on shutdown. */
@@ -1374,6 +1391,7 @@ static void usage(const char *name) {
     puts("LED diagnostic: --led-list or --led-test NAME [--led-level 0..63] [--led-duration-ms 100..10000].");
     puts("WARNING: --led-test replaces all 32 LED brightness values, then sends all-off.");
     puts("--mixxx-feedback enables CoreMIDI destination KORE 1 Feedback, LED+LCD updates from Mixxx.");
+    puts("--audio-layout-probe uniform96|uniform176|leading-zero|trailing-zero|interior-zero|observed|variable-nonzero: ONE synthetic silence OUT batch after first IN completion.");
     puts("--audio-fixed96-silence: bounded silent OUT; --audio-init-only: handshake without ISO; --dry-run: no device access.");
     puts("--audio-duration-ms 100..30000 (default 5000); --audio-max-amplitude 0..0.001 (default .00025); --audio-tone-channel 1..4.");
     puts("--audio-probe (passive iso 0x82 IN monitor, no audio init); --audio-report-ms N (100..60000).");
@@ -1400,6 +1418,12 @@ int main(int argc,char **argv) {
     int rc=1,claimed=0;
     for(int i=1;i<argc;i++) {
         if(!strcmp(argv[i],"--audio-fixed96-silence")) {audio_fixed96_silence=audio_out_96=audio_out_fixed=audio_tx_independent=audio_duplex=audio_init=audio_probe=audio_linux_urbs=1;}
+        else if(!strcmp(argv[i],"--audio-layout-probe") && i+1<argc) {
+            if(audio_layout_probe>=0) {fprintf(stderr,"select one layout probe\n");return 2;}
+            audio_layout_probe=caiaq_probe_id(argv[++i]);
+            if(audio_layout_probe<0) {fprintf(stderr,"unknown layout probe\n");return 2;}
+            audio_duplex=audio_init=audio_probe=audio_linux_urbs=1;
+        }
         else if(!strcmp(argv[i],"--audio-init-only")) {audio_init_only=audio_init=1;}
         else if(!strcmp(argv[i],"--dry-run")) audio_dry_run=1;
         else if(!strcmp(argv[i],"--audio-duration-ms") && i+1<argc) {
@@ -1508,6 +1532,9 @@ int main(int argc,char **argv) {
         else if(!strcmp(argv[i],"--help")) {usage(argv[0]);return 0;}
         else {usage(argv[0]);return 2;}
     }
+    if(audio_layout_probe>=0 && (audio_rx_matched_zero || audio_fixed96_silence || hp_tone || pcm_fifo_mode || audio_out_fixed || audio_out_96 || audio_tx_independent || audio_start_prime || audio_independent_short || audio_echo_short || audio_checkbyte_pattern)) {
+        fprintf(stderr,"layout probe is one-shot silence only; excludes other OUT modes\n");return 2;
+    }
     if(audio_single_176 && (audio_single_176<1 || audio_single_176>4)) {fprintf(stderr,"channel must be 1..4\n");return 2;}
     if(audio_init_only && (audio_probe || audio_duplex || hp_tone || pcm_fifo_mode || lcd_test || led_test_index>=0)) {fprintf(stderr,"init-only excludes ISO/LED/LCD modes\n");return 2;}
     if(audio_fixed96_silence && (hp_tone || pcm_fifo_mode || audio_checkbyte_pattern || audio_echo_short)) {fprintf(stderr,"fixed96 silence excludes tone/FIFO/checkbyte overrides/echo\n");return 2;}
@@ -1530,7 +1557,9 @@ int main(int argc,char **argv) {
     printf("AUDIO CONFIG: OUT=%s PCM=%s duration=%ums amplitude=%.6f channel=%d\n",
         audio_duplex?"enabled":"disabled",hp_tone?"opt-in tone":pcm_fifo_mode?"FIFO":"silence",
         audio_duration_ms,audio_max_amplitude,audio_tone_channel);
+    if(audio_layout_probe>=0) printf("AUDIO CONFIG: layout=%s, one OUT batch only\n",caiaq_probe_names[audio_layout_probe]);
     if(audio_dry_run) return 0;
+    setvbuf(stdout,NULL,_IOLBF,0); /* preserve ordering with native stderr diagnostics */
     signal(SIGINT,on_signal); signal(SIGTERM,on_signal);
     start_ms=clock_ms();
     audio_trace_origin=start_ms;
@@ -1658,6 +1687,10 @@ int main(int argc,char **argv) {
     }
     if(adaptive) {flush_erp4_spike(clock_ms(),1); flush_adaptive(clock_ms(),1);}
     if(diagnose_reversals) flush_pending(clock_ms(),1);
+    if(audio_layout_probe>=0 && !audio_layout_completed) {
+        fprintf(stderr,"AUDIO LAYOUT incomplete: sent=%d completed=%d; no successful probe result\n",audio_layout_sent,audio_layout_completed);
+        audio_failed=1;
+    }
     rc=audio_failed?1:0;
 done:
     if(audio_probe) audio_report(1);

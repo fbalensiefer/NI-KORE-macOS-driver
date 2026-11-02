@@ -179,3 +179,72 @@ is inherited and not certified for DAW playback. No CoreAudio device was install
 or implemented; choose its architecture only after an analog recording verifies
 raw playback. This milestone improves validation and failure behavior; it does
 not yet satisfy the ultimate reliable playback objective.
+
+
+## Hardware follow-up and isolated layout probes
+
+User-supplied hardware results, November 2:
+
+- Fixed96 silence: 23992 OUT packets, 2999 successful rearms, zero reported
+  transfer errors, approximately three seconds. This verifies transport for that
+  run, not audible output.
+- `/tmp/kore-rxmatched.log`: first OUT submission failed at approximately
+  0.684 seconds process time with native `invalid argument`. Exact layout:
+  `0,176,176,0,176,0,176,0`, total 704. IN had completed eight descriptors with
+  four nonempty packets. OUT completed none. Cleanup released the interface and
+  closed the context without a cancellation timeout.
+
+The first-submit failure rules out accumulated failed OUT retries as its initiating
+cause for this run. It does not distinguish zero placement from variable lengths
+or another native constraint. The Apple legacy userspace
+[WriteIsochPipeAsync wrapper](https://github.com/opensource-apple/IOUSBFamily/blob/master/IOUSBLib/Classes/IOUSBInterfaceClass.cpp)
+sums frReqCount and forwards the frame list; it has no explicit zero-length
+rejection there. This historical implementation is not proof of the behavior of
+the current macOS kernel or its compatibility layer. The official Apple source
+inventory checked during this investigation contained empty implementation files;
+no modern kernel constraint was established from it.
+
+A new `--audio-layout-probe PROFILE` submits **exactly one** eight-packet batch
+of synthetic encoded silence after the first successful IN completion. It stops
+on completion, error or deadline. Profiles preserve eight time slots. They do not
+replace RX-matched scheduling and must not be used as a playback clock. No tone,
+FIFO, checkbyte override or other OUT mode can be combined with a probe. A timeout
+without a successful completion returns failure. The exact selected layout is
+logged before submission; rejection is never retried. Log output is now line
+buffered so initialization messages precede native submission errors.
+
+| Profile | Eight descriptor lengths | Purpose |
+| --- | --- | --- |
+| uniform96 | 96,96,96,96,96,96,96,96 | Known-size control with RX-triggered startup |
+| uniform176 | 176,176,176,176,176,176,176,176 | Isolate size from mixed layout |
+| leading-zero | 0,176,176,176,176,176,176,176 | Zero in first descriptor |
+| trailing-zero | 176,176,176,176,176,176,176,0 | Zero in last descriptor |
+| interior-zero | 176,176,176,0,176,176,176,176 | Zero inside descriptor list |
+| observed | 0,176,176,0,176,0,176,0 | Exact hardware-rejected layout |
+| variable-nonzero | 96,176,96,176,96,176,96,176 | Variable lengths without zeros |
+
+Build with `make audio`; `make check audio-check` remains hardware-free. The
+28 CLI cases include every probe and incompatible combinations. Production
+callback mocks verify each layout, exactly one submission, completion stop,
+rejection without retry, and that an OUT failure in an IN callback prevents IN
+rearm. The earlier callback performed one extra IN rearm after requesting a stop;
+this is fixed and regression tested. This did not cause the initial OUT rejection.
+
+Prepared hardware commands, **not executed by the agent**: disconnect speakers
+and headphones and minimize gain. Run one profile at a time, beginning with the
+controls. Each command below sends at most one millisecond of encoded silence
+at interval 1, eight microframes; the 1000ms deadline is a completion timeout.
+
+```sh
+LIBUSB_DEBUG=4 ./build/kore1-bridge-audio --audio-layout-probe uniform96 --audio-duration-ms 1000 > /tmp/kore-layout-uniform96.log 2>&1
+LIBUSB_DEBUG=4 ./build/kore1-bridge-audio --audio-layout-probe uniform176 --audio-duration-ms 1000 > /tmp/kore-layout-uniform176.log 2>&1
+```
+
+If both controls complete, run the nonzero variation and individual zero-position
+probes separately, substituting `variable-nonzero`, `leading-zero`, `trailing-zero`,
+`interior-zero` or `observed` for the profile and corresponding log filename.
+Do not proceed to tones. If a control fails, preserve that log before interpreting
+zero-placement results. If controls pass and only zero layouts fail, that supports
+a zero-descriptor restriction on this host/endpoint, rather than a universal macOS
+rule. If only leading-zero fails, first-descriptor placement becomes the next
+hypothesis. If variable-nonzero fails too, variable-size handling remains suspect.

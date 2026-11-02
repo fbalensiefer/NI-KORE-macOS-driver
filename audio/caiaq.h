@@ -7,9 +7,32 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <math.h>
+#include <string.h>
 #define CAIAQ_MAX_PACKET 512u
 #define CAIAQ_MAX_PACKETS 8u
 #define CAIAQ_MAX_AMPLITUDE 0.001 /* -60 dBFS */
+/* Synthetic submission probes, never a playback clock or routing strategy. */
+#define CAIAQ_PROBE_COUNT 7u
+static const char *const caiaq_probe_names[CAIAQ_PROBE_COUNT]={
+    "uniform96","uniform176","leading-zero","trailing-zero","interior-zero","observed","variable-nonzero"
+};
+static inline int caiaq_probe_id(const char *name) {
+    for(unsigned i=0;i<CAIAQ_PROBE_COUNT;i++) if(!strcmp(name,caiaq_probe_names[i])) return (int)i;
+    return -1;
+}
+static inline int caiaq_probe_layout(unsigned id,unsigned lengths[8]) {
+    static const unsigned vectors[CAIAQ_PROBE_COUNT][8]={
+        {96,96,96,96,96,96,96,96},
+        {176,176,176,176,176,176,176,176},
+        {0,176,176,176,176,176,176,176},
+        {176,176,176,176,176,176,176,0},
+        {176,176,176,0,176,176,176,176},
+        {0,176,176,0,176,0,176,0},
+        {96,176,96,176,96,176,96,176}
+    };
+    if(id>=CAIAQ_PROBE_COUNT || !lengths)return -1;
+    memcpy(lengths,vectors[id],sizeof(vectors[id]));return 0;
+}
 typedef unsigned char (*caiaq_pcm_byte_fn)(void *, unsigned);
 static inline int caiaq_packet_valid(unsigned n) {
     /* Complete Linux loop iterations: PCM pair, optional check pair. */
