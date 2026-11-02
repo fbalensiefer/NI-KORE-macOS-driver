@@ -12,7 +12,7 @@ struct kore_rate_match {
     double calibration_sum;
     bool primed;
     double phase,ratio,integral,filtered_error,fade;
-    float left[2],right[2],last[2];
+    float left[4],right[4],last[4];
     uint64_t input_frames,output_frames,priming_frames,starvations;
 };
 static inline void kore_rate_match_init(struct kore_rate_match *s,unsigned target) {
@@ -27,17 +27,17 @@ static inline float kore_finite_sample(float value) {
     if(!isfinite(value))return 0;
     return value>1?1:value< -1?-1:value;
 }
-static inline bool kore_rate_match_frame(struct kore_rate_match *s,struct kore_pcm_ring *q,float out[2]) {
+static inline bool kore_rate_match_frame(struct kore_rate_match *s,struct kore_pcm_ring *q,float *out) {
     s->output_frames++;
     if(!s->primed) {
         if(s->prime_target && s->prime_target<KORE_PCM_CAPACITY-2 && kore_pcm_available(q)>=s->prime_target+2) {
-            float pair[4];if(kore_pcm_pop(q,pair,2)!=2)return false;
-            for(unsigned ch=0;ch<2;ch++){s->left[ch]=kore_finite_sample(pair[ch]);s->right[ch]=kore_finite_sample(pair[ch+2]);}
+            float pair[8];if(kore_pcm_pop(q,pair,2)!=2)return false;
+            for(unsigned ch=0;ch<kore_pcm_channels(q);ch++){s->left[ch]=kore_finite_sample(pair[ch]);s->right[ch]=kore_finite_sample(pair[ch+kore_pcm_channels(q)]);}
             s->input_frames+=2;s->phase=0;s->fade=0;s->filtered_error=0;s->primed=true;
             s->control_frames=s->warmup_frames=s->calibration_samples=0;s->calibration_sum=0;s->integral=0;s->ratio=1;
         } else {
             s->priming_frames++;s->fade=fmax(0,s->fade-1./240);
-            for(unsigned ch=0;ch<2;ch++)out[ch]=(float)(s->last[ch]*s->fade);
+            for(unsigned ch=0;ch<kore_pcm_channels(q);ch++)out[ch]=(float)(s->last[ch]*s->fade);
             return false;
         }
     }
@@ -62,15 +62,15 @@ static inline bool kore_rate_match_frame(struct kore_rate_match *s,struct kore_p
         }
     }
     s->fade=fmin(1,s->fade+1./240);
-    for(unsigned ch=0;ch<2;ch++) {
+    for(unsigned ch=0;ch<kore_pcm_channels(q);ch++) {
         float value=(float)(s->left[ch]+(s->right[ch]-s->left[ch])*s->phase);
         s->last[ch]=value;out[ch]=(float)(value*s->fade);
     }
     s->phase+=s->ratio;
     while(s->phase>=1) {
-        float next[2];
+        float next[4];
         if(kore_pcm_pop(q,next,1)!=1){s->starvations++;s->primed=false;break;}
-        for(unsigned ch=0;ch<2;ch++){s->left[ch]=s->right[ch];s->right[ch]=kore_finite_sample(next[ch]);}
+        for(unsigned ch=0;ch<kore_pcm_channels(q);ch++){s->left[ch]=s->right[ch];s->right[ch]=kore_finite_sample(next[ch]);}
         s->input_frames++;s->phase-=1;
     }
     return true;

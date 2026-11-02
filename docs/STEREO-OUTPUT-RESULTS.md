@@ -137,3 +137,55 @@ The repeat (`20261102-210547-725372`) passed: left/right -31.00/-30.72 dBFS,
 solo/dual within 0.003 dB, zero suspect windows, no clipping, all 441000 frames,
 and unchanged PID 53412/run count 1. Installation is verified; sustained audio
 quality and actual Mixxx playback still require validation.
+
+## Main output and four-channel integration (2026-11-02)
+
+The user connected physical Main R -> MAYA44 input 1 and Main L -> input 2.
+HAL version 0.2.0 exposes one four-channel interleaved float stream at 48kHz:
+Main L/R on channels 1/2, headphone L/R on 3/4. Both USB streams share one
+four-channel PCM frame and ASRC phase; neither pair is duplicated. Four-channel
+wire-decoding tests cover independent sample values, zeroed pairs and independent
+gains. The `kpc4` property replaces `kpcm`, so mismatched old/new binaries fail
+rather than silently interpreting the wrong frame size.
+
+| Run suffix | Main gain | Left/right captured peak dBFS | Result |
+|---|---|---|---|
+| 20261102-211224-403041 | 0.1 | not recorded | capture-ready timeout after CoreAudio restart; invalid run |
+| 20261102-211256-591646 | 0.1 | -13.91 / -14.63 | pass |
+| 20261102-211428-597593 | 0.2 | -7.89 / -8.56 | pass |
+
+Both valid runs captured 441000 frames contiguously with zero clipped samples
+and no suspect amplitude windows. The 0.2 run had solo/dual changes below 0.025 dB.
+L -> input 2 and R -> input 1 matched the stated physical wiring. The roughly
+0.7 dB channel difference has not been attributed separately to DAC, cable or ADC;
+no arbitrary L/R compensation is applied. Main gain 0.2 retains about 8 dB observed
+ADC headroom for this setup. This is not an absolute voltage calibration.
+
+The previous headphone path was much quieter at the same digital gain, so the
+login defaults are now Main 0.2 and Headphones 1. Headphone unity is digitally
+verified but has not been measured through the new Main-only loopback. Hardware
+volume knobs remain under user control. This does not certify long-term USB
+stability, distortion or frequency response.
+
+Final installation checks: built and installed bridge SHA256 matched
+`b65b7d622270d0ade9f8cd0f6166469da4d657a2d75353bb8cff71139e0d1568`.
+The installed HAL reported 48000 Hz, four output channels and 16 bytes/frame.
+The user Mixxx soundconfig was backed up and changed while closed to Master
+channels 0/1 and Headphones 2/3 (zero-based XML). The login agent was regenerated
+with Main 0.2 / Headphones 1.
+
+**Final runtime check remains blocked.** After the final CoreAudio restart, new
+client processes repeatedly hung in HALSystem device initialization. A real HAL
+system test timed out at 12s without results; a later status probe timed out at
+15s. Read-only samples showed the KORE helper idle, and CoreAudio / Teams helpers
+reconciling proxy objects; this does not establish which component caused the
+problem. A stopped-bridge CoreAudio restart restored one successful format query
+but not subsequent clients. A targeted Teams-helper TERM, then KILL, did not
+restore client initialization. No other driver installation or configuration was
+removed. A full Mac restart and a repeat installed-service loopback are needed.
+Do not treat earlier valid Main captures as proof that the final installation is
+currently passing or that sustained quality has been qualified.
+
+Offline checks passed: check, audio-check, native-check and coreaudio-check,
+including four-channel wire vectors with distinct gains/zeroed pairs. The ASRC
+clock simulations were also rerun with four channels for 15 simulated minutes.

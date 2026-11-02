@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Experimental fixed 48k stereo virtual output. USB stays in a separate process.
+ * Experimental fixed 48k four-channel virtual output. USB stays in a separate process.
  * Host-marshalled CFData custom property transports PCM; no shared files/socket.
  */
 #include <CoreAudio/AudioServerPlugIn.h>
@@ -17,10 +17,10 @@
 #define KORE_BOX 4u
 #define KORE_DEVICE 2u
 #define KORE_STREAM 3u
-#define KORE_PULL 'kpcm'
+#define KORE_PULL 'kpc4'
 #define KORE_LEASE 'kown'
 #define KORE_UID CFSTR("org.nikore.experimental.output")
-static struct kore_pcm_ring pcm;
+static struct kore_pcm_ring pcm={.channels=4};
 static pthread_mutex_t control=PTHREAD_MUTEX_INITIALIZER;
 static _Atomic unsigned running,refs=1;
 static _Atomic uint64_t anchor,clockSeed=1;
@@ -31,7 +31,7 @@ static AudioServerPlugInDriverRef driverRef=&driverPtr;
 static AudioStreamBasicDescription format(void) {
     return (AudioStreamBasicDescription){.mSampleRate=48000,.mFormatID=kAudioFormatLinearPCM,
         .mFormatFlags=kAudioFormatFlagIsFloat|kAudioFormatFlagIsPacked|kAudioFormatFlagsNativeEndian,
-        .mBytesPerPacket=8,.mFramesPerPacket=1,.mBytesPerFrame=8,.mChannelsPerFrame=2,.mBitsPerChannel=32};
+        .mBytesPerPacket=16,.mFramesPerPacket=1,.mBytesPerFrame=16,.mChannelsPerFrame=4,.mBitsPerChannel=32};
 }
 static HRESULT query(void *d,REFIID uuid,LPVOID *out) {
     if(d!=driverRef || !out)return E_NOINTERFACE;
@@ -49,6 +49,7 @@ static OSStatus config(AudioServerPlugInDriverRef d,AudioObjectID id,UInt64 acti
 static Boolean valid_object(AudioObjectID id){return id==kAudioObjectPlugInObject || id==KORE_DEVICE || id==KORE_STREAM || id==KORE_BOX;}
 static Boolean has(AudioServerPlugInDriverRef d,AudioObjectID id,pid_t pid,const AudioObjectPropertyAddress *a) {
     (void)pid;if(d!=driverRef || !a || !valid_object(id))return false;
+    if(a->mSelector==kAudioObjectPropertyElementName)return id==KORE_DEVICE && a->mScope==kAudioObjectPropertyScopeOutput && a->mElement>=1 && a->mElement<=4;
     switch(a->mSelector) {
         case kAudioObjectPropertyBaseClass:case kAudioObjectPropertyClass:case kAudioObjectPropertyOwner:
         case kAudioObjectPropertyModelName:case kAudioObjectPropertyName:case kAudioObjectPropertyManufacturer:case kAudioObjectPropertyOwnedObjects:return true;
@@ -85,7 +86,7 @@ static OSStatus settable(AudioServerPlugInDriverRef d,AudioObjectID id,pid_t pid
 }
 static UInt32 property_size(AudioObjectID id,const AudioObjectPropertyAddress *a) {
     switch(a->mSelector) {
-        case kAudioPlugInPropertyResourceBundle:case kAudioObjectPropertyModelName:case kAudioObjectPropertyName:case kAudioObjectPropertyManufacturer:case kAudioPlugInPropertyBundleID:
+        case kAudioObjectPropertyElementName:case kAudioPlugInPropertyResourceBundle:case kAudioObjectPropertyModelName:case kAudioObjectPropertyName:case kAudioObjectPropertyManufacturer:case kAudioPlugInPropertyBundleID:
         case kAudioDevicePropertyDeviceUID:case kAudioDevicePropertyModelUID:case kAudioBoxPropertyBoxUID:case KORE_PULL:case KORE_LEASE:return sizeof(CFTypeRef);
         case kAudioObjectPropertyOwnedObjects:return id==kAudioObjectPlugInObject?2*sizeof(AudioObjectID):id==KORE_BOX || id==KORE_STREAM || (id==KORE_DEVICE && a->mScope==kAudioObjectPropertyScopeInput)?0:sizeof(AudioObjectID);
         case kAudioBoxPropertyClockDeviceList:return 0;
@@ -112,6 +113,10 @@ static OSStatus get(AudioServerPlugInDriverRef d,AudioObjectID id,pid_t pid,cons
         case kAudioObjectPropertyBaseClass:value=kAudioObjectClassID;break;
         case kAudioObjectPropertyClass:value=id==kAudioObjectPlugInObject?kAudioPlugInClassID:id==KORE_DEVICE?kAudioDeviceClassID:id==KORE_BOX?kAudioBoxClassID:kAudioStreamClassID;break;
         case kAudioObjectPropertyOwner:value=id==kAudioObjectPlugInObject?kAudioObjectUnknown:(id==KORE_DEVICE || id==KORE_BOX)?kAudioObjectPlugInObject:KORE_DEVICE;break;
+        case kAudioObjectPropertyElementName: {
+            CFStringRef names[]={CFSTR("Main Left"),CFSTR("Main Right"),CFSTR("Headphones Left"),CFSTR("Headphones Right")};
+            string=names[a->mElement-1];break;
+        }
         case kAudioObjectPropertyModelName:string=CFSTR("KORE 1 Native Output");break;
         case kAudioObjectPropertyName:string=id==KORE_DEVICE?CFSTR("KORE 1 Experimental Output"):CFSTR("KORE 1 Native Bridge");break;
         case kAudioObjectPropertyManufacturer:string=CFSTR("NI-KORE open-source project");break;
@@ -160,8 +165,8 @@ static OSStatus get(AudioServerPlugInDriverRef d,AudioObjectID id,pid_t pid,cons
         case KORE_PULL: {
             pthread_mutex_lock(&control);
             if(!consumer || consumer!=pid){pthread_mutex_unlock(&control);return kAudioHardwareIllegalOperationError;}
-            float block[512*2];size_t frames=kore_pcm_pop(&pcm,block,512);
-            *(CFDataRef *)data=CFDataCreate(NULL,(const UInt8 *)block,(CFIndex)(frames*8));
+            float block[512*4];size_t frames=kore_pcm_pop(&pcm,block,512);
+            *(CFDataRef *)data=CFDataCreate(NULL,(const UInt8 *)block,(CFIndex)(frames*16));
             pthread_mutex_unlock(&control);return *(CFDataRef *)data?0:kAudioHardwareUnspecifiedError;
         }
         default:break; /* zero latency/safety offset/clock domain */

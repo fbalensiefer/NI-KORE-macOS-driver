@@ -4,20 +4,20 @@
 #include <stdlib.h>
 /* Simulated 512-frame host producer and device clock; no sleeps or hardware. */
 static void simulate(double ppm,unsigned seconds) {
-    struct kore_pcm_ring *q=calloc(1,sizeof(*q));assert(q);
+    struct kore_pcm_ring *q=calloc(1,sizeof(*q));assert(q);q->channels=4;
     struct kore_rate_match match;kore_rate_match_init(&match,2048);
-    float initial[2050*2];for(unsigned i=0;i<2050;i++)initial[i*2]=initial[i*2+1]=.5f;
+    float initial[2050*4];for(unsigned i=0;i<2050*4;i++)initial[i]=.5f;
     assert(kore_pcm_push(q,initial,2050)==2050);
     double device_rate=48000*(1+ppm/1e6);uint64_t produced=2050,next_block=512,outputs=(uint64_t)(device_rate*seconds);
     unsigned minimum=8192,maximum=0;
     for(uint64_t n=0;n<outputs;n++) {
         uint64_t host_elapsed=(uint64_t)(n*48000/device_rate);
         if(host_elapsed>=next_block) {
-            float block[512*2];for(unsigned i=0;i<512;i++)block[i*2]=block[i*2+1]=.5f;
+            float block[512*4];for(unsigned i=0;i<512*4;i++)block[i]=.5f;
             assert(kore_pcm_push(q,block,512)==512);produced+=512;next_block+=512;
         }
-        float out[2]={0};kore_rate_match_frame(&match,q,out);
-        assert(isfinite(out[0]) && out[0]>=0 && out[0]<=.5f && out[0]==out[1]);
+        float out[4]={0};kore_rate_match_frame(&match,q,out);
+        assert(isfinite(out[0]) && out[0]>=0 && out[0]<=.5f && out[0]==out[1] && out[1]==out[2] && out[2]==out[3]);
         assert(match.ratio>=.999 && match.ratio<=1.001);
         unsigned available=(unsigned)kore_pcm_available(q);
         if(n>48000*30u){if(available<minimum)minimum=available;if(available>maximum)maximum=available;}

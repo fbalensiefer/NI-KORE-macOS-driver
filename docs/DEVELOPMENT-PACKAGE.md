@@ -84,13 +84,24 @@ duration or diagnostic tone. To run the actual output bridge after installation:
 native silence diagnostic. Do not run any other KORE controller/probe process at
 the same time as the final bridge: they would contend for interface 0.
 
-The CoreAudio device is fixed 48kHz, float stereo output routed to the verified
-logical USB outputs 3/4 (headphone path). PCM defaults to .00025 peak
-(about -72dBFS), with an explicit `--pcm-gain 0..1` playback range. The login
-service explicitly uses `--pcm-gain 0.1` (-20 dB) after measured loopback validation.
-This remains experimental audio. The adaptive rate matcher follows reservoir occupancy without
-changing USB frame order. Audio input, the other output pair as a CoreAudio stream,
-long-run clock qualification, and full-band resampling quality remain unfinished.
+The CoreAudio device exposes four interleaved float output channels at fixed
+48kHz: **1/2 Main Left/Right**, **3/4 Headphones Left/Right**. Select Main 1/2
+and Headphones 3/4 separately in Mixxx Sound Hardware. The current user's Mixxx
+configuration is backed up before adding these routes while the app is closed.
+
+The standalone CLI keeps its quiet .00025 gain default. `--pcm-gain 0..1` sets
+both pairs; `--main-gain` and `--headphone-gain` override their respective pair,
+regardless of argument order. The login installer explicitly selects Main **0.2**
+(-13.98 dB) and Headphones **1** (0 dB). These are software gains, not calibrated
+analog volume settings. Main 0.2 was measured through KORE Main R -> MAYA44 CH1,
+L -> CH2 at roughly -8 dBFS with no capture clipping. Headphone unity gain is
+verified digitally; its new analog level has not been remeasured with this Main
+cabling. Keep the hardware headphone volume low when reconnecting headphones.
+
+The adaptive rate matcher follows reservoir occupancy and interpolates all four
+channels at the same phase, without changing USB frame order. Reported latency
+remains about 171ms. Audio input, long-run clock qualification and full-band
+resampling quality remain unfinished. Earlier USB deadline failures are unresolved.
 
 ## Install the system HAL plug-in
 
@@ -195,8 +206,12 @@ installed HAL bundle and running bridge.
 ## Stereo channel verification
 
 `python3 automation/coreaudio_loopback.py --run-tone --stereo-test --use-login-bridge`
-checks the running service without opening another USB owner. It emits separate
+checks Main 1/2 on the running service without opening another USB owner.
+Add `--headphones` to test 3/4 after moving the loopback cable to that output. It emits separate
 440Hz left / 660Hz right / dual windows and records all MAYA44 inputs. See
 [stereo measurements](STEREO-OUTPUT-RESULTS.md). Without `--run-tone`, this helper
 stays hardware-free. An explicit gain option applies only to a separately supervised
 bridge after stopping the login agent; it never changes a running service's gain.
+
+Mixxx XML route names and zero-based channel indices follow the upstream
+[AudioOutput serializer](https://github.com/mixxxdj/mixxx/blob/main/src/soundio/soundmanagerutil.cpp).

@@ -11,7 +11,7 @@
 #include <unistd.h>
 #include "client.h"
 #include "test_signal.h"
-struct Render {uint64_t frames;int stereo;_Atomic int done,failed;};
+struct Render {uint64_t frames;int stereo,pair;_Atomic int done,failed;};
 static OSStatus render(AudioDeviceID id,const AudioTimeStamp *now,const AudioBufferList *in,const AudioTimeStamp *it,AudioBufferList *out,const AudioTimeStamp *ot,void *ctx) {
     (void)id;(void)now;(void)in;(void)it;(void)ot;struct Render *r=ctx;
     if(!out || !out->mNumberBuffers){atomic_store(&r->failed,1);atomic_store(&r->done,1);return 0;}
@@ -26,7 +26,7 @@ static OSStatus render(AudioDeviceID id,const AudioTimeStamp *now,const AudioBuf
         frames=n;channels+=buffer->mNumberChannels;
         memset(buffer->mData,0,buffer->mDataByteSize);
     }
-    if(channels!=2){atomic_store(&r->failed,1);atomic_store(&r->done,1);return 0;}
+    if(channels!=4){atomic_store(&r->failed,1);atomic_store(&r->done,1);return 0;}
     if(atomic_load(&r->done))return 0;
     for(unsigned n=0;n<frames;n++) {
         float value[2];kore_test_signal(r->frames+n,r->stereo,value);
@@ -34,7 +34,7 @@ static OSStatus render(AudioDeviceID id,const AudioTimeStamp *now,const AudioBuf
         for(UInt32 b=0;b<out->mNumberBuffers;b++) {
             float *values=out->mBuffers[b].mData;
             for(unsigned ch=0;ch<out->mBuffers[b].mNumberChannels;ch++,channel++)
-                values[n*out->mBuffers[b].mNumberChannels+ch]=value[channel];
+                values[n*out->mBuffers[b].mNumberChannels+ch]=(channel/2==(unsigned)r->pair?value[channel%2]:0);
         }
     }
     r->frames+=frames;if(r->frames>=(r->stereo?KORE_STEREO_TEST_FRAMES:120000))atomic_store(&r->done,1);return 0;
@@ -59,19 +59,20 @@ static int send_feedback_test(void) {
     printf("MIDI feedback test status=%d\n",status);return status?1:0;
 }
 int main(int argc,const char **argv) {@autoreleasepool {
-    BOOL run=NO,feedback=NO,stereo=NO;
+    BOOL run=NO,feedback=NO,stereo=NO;int pair=0;
     for(int i=1;i<argc;i++) {
         if(!strcmp(argv[i],"--run"))run=YES;
         else if(!strcmp(argv[i],"--feedback"))feedback=YES;
+        else if(!strcmp(argv[i],"--headphones"))pair=1;
         else if(!strcmp(argv[i],"--stereo-test"))stereo=YES;
-        else {fprintf(stderr,"Usage: %s [--run] [--feedback] [--stereo-test]\n",argv[0]);return 2;}
+        else {fprintf(stderr,"Usage: %s [--run] [--feedback] [--stereo-test] [--headphones]\n",argv[0]);return 2;}
     }
     if(!run){puts("Dry run: --run sends a bounded signal exclusively to the KORE virtual output");return 0;}
     AudioDeviceID device=kore_coreaudio_find();if(!device){fprintf(stderr,"KORE virtual output not installed\n");return 1;}
     AudioStreamBasicDescription format={0};UInt32 size=sizeof(format);
     AudioObjectPropertyAddress a={kAudioDevicePropertyStreamFormat,kAudioObjectPropertyScopeOutput,kAudioObjectPropertyElementMain};
-    if(AudioObjectGetPropertyData(device,&a,0,NULL,&size,&format) || format.mSampleRate!=48000 || format.mChannelsPerFrame!=2 || format.mBitsPerChannel!=32 || !(format.mFormatFlags&kAudioFormatFlagIsFloat))return 1;
-    struct Render state={.stereo=stereo};AudioDeviceIOProcID proc=NULL;OSStatus status=AudioDeviceCreateIOProcID(device,render,&state,&proc);
+    if(AudioObjectGetPropertyData(device,&a,0,NULL,&size,&format) || format.mSampleRate!=48000 || format.mChannelsPerFrame!=4 || format.mBitsPerChannel!=32 || !(format.mFormatFlags&kAudioFormatFlagIsFloat))return 1;
+    struct Render state={.stereo=stereo,.pair=pair};AudioDeviceIOProcID proc=NULL;OSStatus status=AudioDeviceCreateIOProcID(device,render,&state,&proc);
     if(status)return 1;status=AudioDeviceStart(device,proc);
     if(!status && feedback && send_feedback_test())status=kAudioHardwareUnspecifiedError;
     for(unsigned i=0;!status && !atomic_load(&state.done) && i<(stereo?650:350);i++)usleep(10000);

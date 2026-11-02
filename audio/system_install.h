@@ -20,7 +20,11 @@ static int kore_system_status(void) {
     if(!device)return 1;
     AudioObjectPropertyAddress a={kAudioDevicePropertyNominalSampleRate,kAudioObjectPropertyScopeGlobal,kAudioObjectPropertyElementMain};
     Float64 rate=0;UInt32 size=sizeof(rate);OSStatus status=AudioObjectGetPropertyData(device,&a,0,NULL,&size,&rate);
-    printf("KORE nominal_rate=%.0f query_status=%d\n",rate,status);return status || rate!=48000?1:0;
+    printf("KORE nominal_rate=%.0f query_status=%d\n",rate,status);
+    AudioStreamBasicDescription format={0};size=sizeof(format);a.mSelector=kAudioDevicePropertyStreamFormat;a.mScope=kAudioObjectPropertyScopeOutput;
+    OSStatus formatStatus=AudioObjectGetPropertyData(device,&a,0,NULL,&size,&format);
+    printf("KORE output_channels=%u bytes_per_frame=%u format_status=%d\n",format.mChannelsPerFrame,format.mBytesPerFrame,formatStatus);
+    return status || rate!=48000 || formatStatus || format.mChannelsPerFrame!=4?1:0;
 }
 static int kore_system_install(BOOL remove) {
     NSString *directory=kore_executable_directory();if(!directory)return 1;
@@ -82,7 +86,7 @@ static int kore_login_install(BOOL remove) {
     if(![[NSFileManager defaultManager] isExecutableFileAtPath:binary])return 1;
     NSError *error=nil;
     if(![[NSFileManager defaultManager] createDirectoryAtPath:directory withIntermediateDirectories:YES attributes:nil error:&error]){report_error("login directory",error);return 1;}
-    NSDictionary *agent=@{@"Label":label,@"ProgramArguments":@[binary,@"--run",@"--coreaudio-pcm",@"--continuous",@"--mixxx-feedback",@"--pcm-gain",@"0.1"],
+    NSDictionary *agent=@{@"Label":label,@"ProgramArguments":@[binary,@"--run",@"--coreaudio-pcm",@"--continuous",@"--mixxx-feedback",@"--main-gain",@"0.2",@"--headphone-gain",@"1"],
         @"RunAtLoad":@YES,@"KeepAlive":@YES,@"ThrottleInterval":@10,@"ProcessType":@"Interactive",
         @"StandardOutPath":[NSHomeDirectory() stringByAppendingPathComponent:@"Library/Logs/KORE1-bridge.log"],
         @"StandardErrorPath":[NSHomeDirectory() stringByAppendingPathComponent:@"Library/Logs/KORE1-bridge-error.log"]};

@@ -19,15 +19,15 @@ int main(int argc,const char **argv) {@autoreleasepool {
     NSTask *render=[NSTask new];render.executableURL=[NSURL fileURLWithPath:[directory stringByAppendingPathComponent:@"kore-coreaudio-render"]];render.arguments=@[@"--run"];
     NSError *error=nil;
     if(![render launchAndReturnError:&error]) {fprintf(stderr,"render launch: %s\n",error.localizedDescription.UTF8String);kore_coreaudio_lease(device,NO);return 1;}
-    struct kore_pcm_ring queue={0};uint64_t frames=0,nonzero=0;double peak=0;unsigned rightNonzero=0;
+    struct kore_pcm_ring queue={.channels=4};uint64_t frames=0,nonzero=0;double peak=0;unsigned rightNonzero=0;
     for(unsigned ms=0;ms<5000;ms++) {
         status=kore_coreaudio_pull(device,&queue);if(status)break;
-        float block[1024];size_t n=kore_pcm_pop(&queue,block,512);frames+=n;
+        float block[2048];size_t n=kore_pcm_pop(&queue,block,512);frames+=n;
         for(size_t i=0;i<n;i++) {
-            if(!isfinite(block[i*2]) || !isfinite(block[i*2+1]))status=kAudioHardwareUnspecifiedError;
-            if(fabs(block[i*2])>peak)peak=fabs(block[i*2]);
-            if(block[i*2]!=0)nonzero++;
-            if(block[i*2+1]!=0)rightNonzero++;
+            if(!isfinite(block[i*4]) || !isfinite(block[i*4+1]))status=kAudioHardwareUnspecifiedError;
+            if(fabs(block[i*4])>peak)peak=fabs(block[i*4]);
+            if(block[i*4]!=0)nonzero++;
+            if(block[i*4+1]!=0)rightNonzero++;
         }
         if(!render.running)break;
         usleep(1000);

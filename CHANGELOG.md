@@ -86,3 +86,13 @@ Prior development occurred as standalone `kore-midi-v3` through `v9` prototypes 
   diagnostic oscillator; keep the CLI quiet default and set login playback to 0.1.
 - Verify bounded stereo loopbacks at 0.01 and 0.1 through the KORE headphone output
   and MAYA44 capture, with contiguous capture and no clipping.
+
+### Four-channel Main and headphone output
+
+- Expose Main L/R on CoreAudio channels 1/2 and Headphones L/R on 3/4 at 48kHz.
+- Carry all four channels through the HAL IPC, ring, shared ASRC and native USB
+  packer; reject legacy stereo IPC instead of misreading its frame layout.
+- Add independent Main/headphone gain options. Login defaults: Main 0.2,
+  Headphones 1. Keep diagnostic tone caps and the quiet standalone CLI default.
+- Verify Main stereo at gains 0.1/0.2 against the user's known MAYA44 wiring;
+  document capture-start timeout and unverified analog headphone unity level.

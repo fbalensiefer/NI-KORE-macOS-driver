@@ -16,7 +16,10 @@ int main(void) {
     assert(!get(driverRef,KORE_DEVICE,1,&a,0,NULL,4,&used,&value) && value==KORE_STREAM);
     a.mScope=kAudioObjectPropertyScopeInput;assert(!get_size(driverRef,KORE_DEVICE,1,&a,0,NULL,&size) && !size);
     a=(AudioObjectPropertyAddress){kAudioStreamPropertyVirtualFormat,kAudioObjectPropertyScopeGlobal,kAudioObjectPropertyElementMain};
-    AudioStreamBasicDescription f;assert(!get(driverRef,KORE_STREAM,1,&a,0,NULL,sizeof(f),&used,&f) && f.mSampleRate==48000 && f.mChannelsPerFrame==2);
+    AudioStreamBasicDescription f;assert(!get(driverRef,KORE_STREAM,1,&a,0,NULL,sizeof(f),&used,&f) && f.mSampleRate==48000 && f.mChannelsPerFrame==4);
+    a=(AudioObjectPropertyAddress){kAudioObjectPropertyElementName,kAudioObjectPropertyScopeOutput,3};
+    CFStringRef channelName=NULL;assert(!get(driverRef,KORE_DEVICE,1,&a,0,NULL,sizeof(channelName),&used,&channelName));
+    assert(CFEqual(channelName,CFSTR("Headphones Left")));CFRelease(channelName);
     a=(AudioObjectPropertyAddress){kAudioPlugInPropertyBoxList,kAudioObjectPropertyScopeGlobal,kAudioObjectPropertyElementMain};
     assert(!get(driverRef,kAudioObjectPlugInObject,1,&a,0,NULL,4,&used,&value) && value==KORE_BOX);
     a.mSelector=kAudioBoxPropertyDeviceList;
@@ -33,12 +36,12 @@ int main(void) {
     a.mSelector=KORE_LEASE;CFBooleanRef yes=kCFBooleanTrue,no=kCFBooleanFalse,invalid=NULL;
     assert(set(driverRef,KORE_DEVICE,getpid(),&a,0,NULL,sizeof(invalid),&invalid)==kAudioHardwareBadPropertySizeError);
     assert(!set(driverRef,KORE_DEVICE,getpid(),&a,0,NULL,sizeof(yes),&yes));
-    float values[8]={1,-1,.0001f,-.0001f,NAN,INFINITY,0,0};
+    float values[16]={0,0,1,-1,0,0,.0001f,-.0001f,0,0,NAN,INFINITY,0,0,0,0};
     assert(!perform(driverRef,KORE_DEVICE,KORE_STREAM,1,kAudioServerPlugInIOOperationWriteMix,4,NULL,values,NULL));
     a.mSelector=KORE_PULL;CFDataRef data=NULL;
     assert(get(driverRef,KORE_DEVICE,getpid()+1,&a,0,NULL,sizeof(data),&used,&data)==kAudioHardwareIllegalOperationError);
-    assert(!get(driverRef,KORE_DEVICE,getpid(),&a,0,NULL,sizeof(data),&used,&data) && CFDataGetLength(data)==32);
-    struct kore_pcm_ring local={0};assert(kore_pcm_push(&local,(const float *)CFDataGetBytePtr(data),4)==4);CFRelease(data);
+    assert(!get(driverRef,KORE_DEVICE,getpid(),&a,0,NULL,sizeof(data),&used,&data) && CFDataGetLength(data)==64);
+    struct kore_pcm_ring local={.channels=4};assert(kore_pcm_push(&local,(const float *)CFDataGetBytePtr(data),4)==4);CFRelease(data);
     struct kore_pcm_source source={.queue=&local,.position={0,0},.amplitude=.00025};
     unsigned char bytes[96];assert(!caiaq_pack(bytes,sizeof(bytes),96,kore_pcm_byte,&source));
     for(unsigned i=0;i<96;i++)if(i%2==0 && i%8!=4)assert(bytes[i]==0); /* inactive logical outputs */
