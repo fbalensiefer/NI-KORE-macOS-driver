@@ -108,3 +108,25 @@ capacity and offset policy all differ from the original libusb experiment.
 After native acceptance is verified, integrate a bounded RX-driven transfer pool
 with explicit frame scheduling and shutdown tests. Only then use opt-in low-level
 single-channel PCM and an analog recording to validate DAC routing/playback.
+
+## Discovery correction
+
+The first hardware attempt stopped at interface discovery, before AUDIO_PARAMS
+or ISO submission. A read-only registry check confirmed an IOUSBHostInterface
+for 17cc:4711/interface 0. The framework-generated compound matching dictionary
+had not found it. Discovery now enumerates IOUSBHostInterface services and checks
+numeric VID, PID and interface-number properties explicitly. It refuses zero or
+multiple matches and releases all unselected registry references.
+
+A second prototype bug was corrected: this host reports `USBSpeed=3` but legacy
+`Device Speed=2` for the same high-speed KORE link. Comparing the former to the
+legacy enum would incorrectly reject the device. The speed guard now reads
+`UsbLinkSpeed=480000000` bit/s from the selected interface/ancestor instead.
+
+`make native-check` passes with new identity-filter regression assertions.
+`./build/kore1-native-probe --discover` was executed successfully: exactly one
+KORE interface was found and its 480-Mbit/s link was verified. This command only
+reads registry properties: it opens no USB user client and sends no USB commands.
+The native OUT workaround still has no hardware result; retry the original
+single-batch `--run` command to reach that test. No system configuration change,
+reset or elevated USB access is involved in the discovery fix.

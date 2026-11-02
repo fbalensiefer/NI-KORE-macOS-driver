@@ -38,6 +38,11 @@
 @end
 int main(void) {
     @autoreleasepool {
+        assert(caiaq_native_identity(@{@"idVendor":@0x17cc,@"idProduct":@0x4711,@"bInterfaceNumber":@0}));
+        assert(!caiaq_native_identity(@{@"idVendor":@0x17cc,@"idProduct":@0x4712,@"bInterfaceNumber":@0}));
+        assert(!caiaq_native_identity(@{@"idVendor":@0x17cc,@"idProduct":@0x4711,@"bInterfaceNumber":@1}));
+        assert(!caiaq_native_identity(@{@"idVendor":@0x17cc,@"idProduct":@0x4711}));
+        assert(!caiaq_native_identity(@{@"idVendor":@"6092",@"idProduct":@0x4711,@"bInterfaceNumber":@0}));
         for(int mode=0;mode<3;mode++) {
             KoreNativeProbe *probe=[KoreNativeProbe new];
             FakeNativePipe *in=[FakeNativePipe new],*out=[FakeNativePipe new];

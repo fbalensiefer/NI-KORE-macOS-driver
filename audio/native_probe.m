@@ -5,6 +5,7 @@
 #import <Foundation/Foundation.h>
 #import <IOUSBHost/IOUSBHost.h>
 #include "native_plan.h"
+#include "native_discovery.h"
 #include <signal.h>
 #import <IOKit/usb/USB.h>
 static volatile sig_atomic_t interrupted;
@@ -48,16 +49,9 @@ static void report_error(const char *where,NSError *error) {
 }
 - (BOOL)open {
     NSError *error=nil;
-    CFMutableDictionaryRef match=[IOUSBHostInterface createMatchingDictionaryWithVendorID:@0x17cc
-        productID:@0x4711 bcdDevice:nil interfaceNumber:@0 configurationValue:nil
-        interfaceClass:nil interfaceSubclass:nil interfaceProtocol:nil speed:nil productIDArray:nil];
-    if(!match)return NO;
-    io_service_t service=IOServiceGetMatchingService(kIOMainPortDefault,match); /* consumes match */
-    if(!service) {fprintf(stderr,"NATIVE KORE 1 interface 0 not found\n");return NO;}
-    id speed=CFBridgingRelease(IORegistryEntrySearchCFProperty(service,kIOServicePlane,
-        (__bridge CFStringRef)IOUSBHostMatchingPropertyKeySpeed,kCFAllocatorDefault,
-        kIORegistryIterateRecursively|kIORegistryIterateParents));
-    if(![speed isKindOfClass:[NSNumber class]] || [speed unsignedIntValue]!=kUSBDeviceSpeedHigh) {
+    io_service_t service=caiaq_native_find_interface();
+    if(!service) {fprintf(stderr,"NATIVE KORE 1 interface 0 not found or ambiguous\n");return NO;}
+    if(!caiaq_native_high_speed(service)) {
         fprintf(stderr,"NATIVE high-speed link not verified; refusing timing assumptions\n");
         IOObjectRelease(service);return NO;
     }
@@ -206,9 +200,10 @@ static void report_error(const char *where,NSError *error) {
 @end
 int main(int argc,const char **argv) {
     @autoreleasepool {
-        int profile=caiaq_probe_id("observed"),zeroAtStart=1;unsigned guard=1;BOOL run=NO;
+        int profile=caiaq_probe_id("observed"),zeroAtStart=1;unsigned guard=1;BOOL run=NO,discover=NO;
         for(int i=1;i<argc;i++) {
-            if(!strcmp(argv[i],"--run"))run=YES;
+            if(!strcmp(argv[i],"--discover"))discover=YES;
+            else if(!strcmp(argv[i],"--run"))run=YES;
             else if(!strcmp(argv[i],"--dry-run"))run=NO;
             else if(!strcmp(argv[i],"--layout") && i+1<argc) {
                 const char *name=argv[++i];profile=!strcmp(name,"rx")?-1:caiaq_probe_id(name);
@@ -218,11 +213,19 @@ int main(int argc,const char **argv) {
                 zeroAtStart=!strcmp(name,"start");
             } else if(!strcmp(argv[i],"--buffer-guard") && i+1<argc) {
                 const char *n=argv[++i];if(strcmp(n,"0") && strcmp(n,"1"))return 2;guard=(unsigned)(n[0]-'0');
-            } else {fprintf(stderr,"Usage: %s [--run|--dry-run] [--layout observed|rx|PROFILE] [--zero-offset start|compact] [--buffer-guard 0|1]\n",argv[0]);return 2;}
+            } else {fprintf(stderr,"Usage: %s [--run|--dry-run|--discover] [--layout observed|rx|PROFILE] [--zero-offset start|compact] [--buffer-guard 0|1]\n",argv[0]);return 2;}
         }
         setvbuf(stdout,NULL,_IOLBF,0);
         printf("NATIVE CONFIG hardware=%s layout=%s zero-offset=%s backing-guard=%u (not transmitted), PCM=silence, one batch\n",
             run?"ENABLED":"disabled",profile<0?"rx":caiaq_probe_names[profile],zeroAtStart?"start":"compact",guard);
+        if(discover) {
+            if(run) {fprintf(stderr,"--discover excludes --run\n");return 2;}
+            io_service_t service=caiaq_native_find_interface();
+            if(!service)return 1;
+            BOOL highSpeed=caiaq_native_high_speed(service);IOObjectRelease(service);
+            puts("NATIVE discovery only: no user client opened, no USB commands sent");
+            return highSpeed?0:1;
+        }
         if(!run)return 0;
         signal(SIGINT,on_signal);signal(SIGTERM,on_signal);
         KoreNativeProbe *probe=[KoreNativeProbe new];probe->profile=profile;probe->zeroAtStart=zeroAtStart;probe->guardBytes=guard;
