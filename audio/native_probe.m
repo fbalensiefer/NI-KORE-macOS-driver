@@ -7,6 +7,7 @@
 #include "native_plan.h"
 #include "native_discovery.h"
 #include <signal.h>
+#include <time.h>
 #import <IOKit/usb/USB.h>
 static volatile sig_atomic_t interrupted;
 static void on_signal(int sig) {(void)sig;interrupted=1;}
@@ -14,6 +15,21 @@ static void report_error(const char *where,NSError *error) {
     fprintf(stderr,"NATIVE %s: domain=%s code=0x%08x description=%s\n",where,
             error.domain.UTF8String,(unsigned)error.code,error.localizedDescription.UTF8String);
 }
+static uint64_t native_now_ns(void) {
+    struct timespec now;clock_gettime(CLOCK_MONOTONIC,&now);
+    return (uint64_t)now.tv_sec*1000000000+(uint64_t)now.tv_nsec;
+}
+@interface KoreNativeSlot : NSObject {
+@public
+    NSMutableData *data;
+    IOUSBHostIsochronousTransaction transactions[8];
+    BOOL busy;
+    unsigned long long sequence,frame;
+}
+@end
+@implementation KoreNativeSlot
+- (instancetype)init {if((self=[super init]))data=[NSMutableData dataWithLength:4097];return self;}
+@end
 @interface KoreNativeProbe : NSObject {
 @public
     dispatch_queue_t queue;
@@ -23,7 +39,14 @@ static void report_error(const char *where,NSError *error) {
     NSMutableData *bulkData,*inData,*outData;
     IOUSBHostIsochronousTransaction inList[8],outList[8];
     int expected,profile,zeroAtStart,failed;
-    unsigned guardBytes;
+    unsigned guardBytes,streamDurationMs,bulkGeneration;
+    BOOL streamMode,streamFinished;
+    NSMutableArray<KoreNativeSlot *> *streamIns,*streamOuts;
+    dispatch_source_t streamTimer;
+    uint64_t streamStart,streamDeadline,nextInFrame,nextOutFrame;
+    unsigned long long nextRxSequence,inSubmitted,inCompletedBatches,inPackets,inZeroPackets,inBytes,inCancelled;
+    unsigned long long outSubmitted,outCompletedBatches,outPackets,outBytes,outCancelled;
+    unsigned long long allZeroBatches,trailingZeroBatches,maxOutBusy;
     BOOL stopping,replySeen,outCompleted;
     unsigned char reply[512];
     NSUInteger replyLength;
@@ -32,6 +55,9 @@ static void report_error(const char *where,NSError *error) {
 - (void)armBulk;
 - (BOOL)exchange:(const unsigned char *)bytes length:(NSUInteger)length reply:(int)command;
 - (void)startISO;
+- (void)startStream;
+- (BOOL)waitForStream;
+- (void)reportStream;
 - (BOOL)waitForCompletion;
 - (BOOL)stop;
 @end
@@ -81,10 +107,11 @@ static void report_error(const char *where,NSError *error) {
 - (void)armBulk {
     if(stopping || failed)return;
     NSError *error=nil;
+    unsigned generation=bulkGeneration;
     BOOL submitted=[bulkIn enqueueIORequestWithData:bulkData completionTimeout:0.5 error:&error
         completionHandler:^(IOReturn status,NSUInteger count) {
-        if(self->stopping)return;
-        if(status!=kIOReturnSuccess || count>512) {[self finishFailure:"bulk IN completion" error:nil];return;}
+        if(self->stopping || generation!=self->bulkGeneration)return;
+        if(status!=kIOReturnSuccess || count>512) {fprintf(stderr,"NATIVE bulk IN status=0x%08x actual=%lu\n",status,(unsigned long)count);[self finishFailure:"bulk IN completion" error:nil];return;}
         const unsigned char *p=self->bulkData.bytes;
         if(count && p[0]==self->expected) {
             memcpy(self->reply,p,count);self->replyLength=count;self->replySeen=YES;
@@ -103,7 +130,7 @@ static void report_error(const char *where,NSError *error) {
     unsigned attempts=command==1?4:1;
     for(unsigned attempt=0;attempt<attempts && !interrupted;attempt++) {
         if(attempt) {
-            dispatch_sync(queue,^{self->stopping=YES;});
+            dispatch_sync(queue,^{self->stopping=YES;self->bulkGeneration++;});
             NSError *error=nil;
             if(![bulkIn abortWithOption:IOUSBHostAbortOptionSynchronous error:&error]) {
                 report_error("bulk retry abort",error);return NO;
@@ -113,7 +140,7 @@ static void report_error(const char *where,NSError *error) {
             printf("NATIVE GET_DEVICE_INFO retry=%u/3\n",attempt);
         }
         dispatch_sync(queue,^{
-            self->expected=command;self->replySeen=NO;self->replyLength=0;
+            self->bulkGeneration++;self->expected=command;self->replySeen=NO;self->replyLength=0;
             [self armBulk];
             if(self->failed)return;
             NSError *error=nil;NSUInteger sent=0;
@@ -182,8 +209,128 @@ static void report_error(const char *where,NSError *error) {
     }];
     if(!submitted)[self finishFailure:"ISO IN submit" error:error];
 }
+- (BOOL)streamCanContinue {
+    if(stopping || failed)return NO;
+    if(native_now_ns()>=streamDeadline) {
+        stopping=YES;streamFinished=YES;dispatch_semaphore_signal(done);return NO;
+    }
+    return YES;
+}
+- (void)submitStreamOut:(const unsigned *)lengths {
+    KoreNativeSlot *slot=nil;
+    for(KoreNativeSlot *candidate in streamOuts)if(!candidate->busy){slot=candidate;break;}
+    if(!slot) {[self finishFailure:"OUT pool exhausted (no packets dropped)" error:nil];return;}
+    struct caiaq_native_plan plan;
+    unsigned any=0;for(unsigned i=0;i<8;i++)any|=lengths[i];
+    if(!any) { /* Retain all eight empty time slots; backing storage still exists. */
+        memset(&plan,0,sizeof(plan));plan.backing_bytes=1;
+    } else if(caiaq_native_plan(lengths,1,1,&plan)) {[self finishFailure:"stream OUT layout" error:nil];return;}
+    memset(slot->transactions,0,sizeof(slot->transactions));
+    for(unsigned i=0;i<8;i++) {
+        if(caiaq_pack((unsigned char *)slot->data.mutableBytes+plan.payload_offsets[i],
+            slot->data.length-plan.payload_offsets[i],lengths[i],NULL,NULL)) {
+            [self finishFailure:"stream silence packing" error:nil];return;
+        }
+        slot->transactions[i].requestCount=lengths[i];
+        slot->transactions[i].offset=plan.transaction_offsets[i];
+    }
+    uint64_t now=[interface frameNumberWithTime:NULL];
+    if(!now) {[self finishFailure:"OUT frame clock" error:nil];return;}
+    if(!nextOutFrame)nextOutFrame=now+32;
+    if(nextOutFrame<now+4) {[self finishFailure:"OUT scheduling deadline missed" error:nil];return;}
+    slot->frame=nextOutFrame++;slot->busy=YES;outSubmitted++;
+    unsigned busy=0;for(KoreNativeSlot *candidate in streamOuts)if(candidate->busy)busy++;
+    if(busy>maxOutBusy)maxOutBusy=busy;
+    NSError *error=nil;
+    BOOL submitted=[isoOut enqueueIORequestWithData:slot->data transactionList:slot->transactions transactionListCount:8
+        firstFrameNumber:slot->frame options:IOUSBHostIsochronousTransferOptionsNone error:&error
+        completionHandler:^(IOReturn status,IOUSBHostIsochronousTransaction *list) {
+        slot->busy=NO;
+        if(self->stopping || self->failed) {self->outCancelled++;return;}
+        if(status!=kIOReturnSuccess) {
+            fprintf(stderr,"NATIVE stream OUT status=0x%08x frame=%llu\n",status,slot->frame);
+            [self finishFailure:"stream OUT completion" error:nil];return;
+        }
+        for(unsigned i=0;i<8;i++) {
+            if(list[i].status!=kIOReturnSuccess || list[i].completeCount!=list[i].requestCount) {
+                fprintf(stderr,"NATIVE stream OUT packet=%u status=0x%08x requested=%u actual=%u\n",i,list[i].status,list[i].requestCount,list[i].completeCount);
+                [self finishFailure:"stream OUT packet" error:nil];return;
+            }
+            self->outPackets++;self->outBytes+=list[i].completeCount;
+        }
+        self->outCompletedBatches++;
+    }];
+    if(!submitted) {slot->busy=NO;fprintf(stderr,"NATIVE OUT schedule: requested=%llu current=%llu lead=%lld frames\n",slot->frame,[interface frameNumberWithTime:NULL],(long long)slot->frame-(long long)[interface frameNumberWithTime:NULL]);[self finishFailure:"stream OUT submit" error:error];}
+}
+- (void)submitStreamIn:(KoreNativeSlot *)slot {
+    if(![self streamCanContinue])return;
+    uint64_t now=[interface frameNumberWithTime:NULL];
+    if(!now || nextInFrame<=now) {[self finishFailure:"IN scheduling deadline missed" error:nil];return;}
+    memset(slot->transactions,0,sizeof(slot->transactions));
+    for(unsigned i=0;i<8;i++) {slot->transactions[i].requestCount=512;slot->transactions[i].offset=i*512;}
+    slot->sequence=inSubmitted++;slot->frame=nextInFrame++;slot->busy=YES;
+    NSError *error=nil;
+    BOOL submitted=[isoIn enqueueIORequestWithData:slot->data transactionList:slot->transactions transactionListCount:8
+        firstFrameNumber:slot->frame options:IOUSBHostIsochronousTransferOptionsNone error:&error
+        completionHandler:^(IOReturn status,IOUSBHostIsochronousTransaction *list) {
+        slot->busy=NO;
+        if(self->stopping || self->failed) {self->inCancelled++;return;}
+        if(![self streamCanContinue]) {self->inCancelled++;return;}
+        if(status!=kIOReturnSuccess && status!=kIOReturnUnderrun) {
+            fprintf(stderr,"NATIVE stream IN status=0x%08x frame=%llu\n",status,slot->frame);
+            [self finishFailure:"stream IN completion" error:nil];return;
+        }
+        if(slot->sequence!=self->nextRxSequence++) {[self finishFailure:"IN completion order" error:nil];return;}
+        unsigned lengths[8];
+        for(unsigned i=0;i<8;i++) {
+            if((list[i].status!=kIOReturnSuccess && list[i].status!=kIOReturnUnderrun) || list[i].completeCount>512) {
+                fprintf(stderr,"NATIVE stream IN packet=%u status=0x%08x actual=%u\n",i,list[i].status,list[i].completeCount);
+                [self finishFailure:"stream IN packet" error:nil];return;
+            }
+            lengths[i]=list[i].completeCount;self->inPackets++;self->inBytes+=lengths[i];
+            if(!lengths[i])self->inZeroPackets++;
+        }
+        self->inCompletedBatches++;
+        unsigned any=0;for(unsigned i=0;i<8;i++)any|=lengths[i];
+        if(!any)self->allZeroBatches++;
+        if(!lengths[7])self->trailingZeroBatches++;
+        [self submitStreamOut:lengths];
+        if(self->failed)return;
+        [self submitStreamIn:slot];
+    }];
+    if(!submitted) {slot->busy=NO;[self finishFailure:"stream IN submit" error:error];}
+}
+- (void)startStream {
+    streamIns=[NSMutableArray array];streamOuts=[NSMutableArray array];
+    for(unsigned i=0;i<32;i++)[streamIns addObject:[KoreNativeSlot new]];
+    for(unsigned i=0;i<64;i++)[streamOuts addObject:[KoreNativeSlot new]];
+    uint64_t now=[interface frameNumberWithTime:NULL];
+    if(!now) {[self finishFailure:"stream frame clock" error:nil];return;}
+    streamStart=native_now_ns();streamDeadline=streamStart+(uint64_t)streamDurationMs*1000000;
+    nextInFrame=now+4;
+    streamTimer=dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER,0,0,queue);
+    dispatch_source_set_timer(streamTimer,dispatch_time(DISPATCH_TIME_NOW,(int64_t)streamDurationMs*NSEC_PER_MSEC),DISPATCH_TIME_FOREVER,0);
+    dispatch_source_set_event_handler(streamTimer,^{
+        self->stopping=YES;self->streamFinished=YES;dispatch_semaphore_signal(self->done);
+    });
+    dispatch_resume(streamTimer);
+    puts("NATIVE STREAM silence: 32 IN / 64 OUT slots, OUT lead=32ms, 8 microframes each, explicit contiguous frame numbers; no tones");
+    for(KoreNativeSlot *slot in streamIns) {if(failed || stopping)break;[self submitStreamIn:slot];}
+}
+- (BOOL)waitForStream {
+    for(unsigned elapsed=0;elapsed<streamDurationMs+500 && !interrupted;elapsed+=50)
+        if(!dispatch_semaphore_wait(done,dispatch_time(DISPATCH_TIME_NOW,50*NSEC_PER_MSEC)))return YES;
+    fprintf(stderr,"NATIVE stream wait timeout or signal\n");return NO;
+}
+- (void)reportStream {
+    printf("NATIVE STREAM final duration_ms=%.1f failed=%d deadline_reached=%d IN submitted=%llu completed=%llu packets=%llu zero=%llu bytes=%llu cancelled=%llu OUT submitted=%llu completed=%llu packets=%llu bytes=%llu cancelled=%llu\n",
+        streamStart?(native_now_ns()-streamStart)/1000000.0:0.0,failed,streamFinished,
+        inSubmitted,inCompletedBatches,inPackets,inZeroPackets,inBytes,inCancelled,
+        outSubmitted,outCompletedBatches,outPackets,outBytes,outCancelled);
+    printf("NATIVE STREAM layouts all_zero=%llu trailing_zero=%llu peak_OUT_busy=%llu/64\n",allZeroBatches,trailingZeroBatches,maxOutBusy);
+}
 - (BOOL)stop {
-    dispatch_sync(queue,^{self->stopping=YES;});
+    dispatch_sync(queue,^{self->stopping=YES;if(self->streamTimer)dispatch_source_cancel(self->streamTimer);});
     BOOL success=YES;
     for(IOUSBHostPipe *pipe in @[bulkIn?:[NSNull null],bulkOut?:[NSNull null],isoIn?:[NSNull null],isoOut?:[NSNull null]]) {
         if((id)pipe==[NSNull null])continue;
@@ -194,30 +341,44 @@ static void report_error(const char *where,NSError *error) {
     }
     if(!success)return NO; /* caller exits without releasing active backing storage */
     dispatch_sync(queue,^{});
+    for(KoreNativeSlot *slot in streamIns)if(slot->busy)success=NO;
+    for(KoreNativeSlot *slot in streamOuts)if(slot->busy)success=NO;
+    if(!success) {fprintf(stderr,"NATIVE pending stream callbacks after synchronous abort\n");return NO;}
     [interface destroy];dispatch_sync(queue,^{});
+    if(streamMode)[self reportStream];
+    streamTimer=nil;
     puts("NATIVE transport closed");return YES;
 }
 @end
 int main(int argc,const char **argv) {
     @autoreleasepool {
-        int profile=caiaq_probe_id("observed"),zeroAtStart=1;unsigned guard=1;BOOL run=NO,discover=NO;
+        int profile=caiaq_probe_id("observed"),zeroAtStart=1;unsigned guard=1;BOOL run=NO,discover=NO,stream=NO,layoutSet=NO;unsigned duration=3000;
         for(int i=1;i<argc;i++) {
-            if(!strcmp(argv[i],"--discover"))discover=YES;
+            if(!strcmp(argv[i],"--stream-silence"))stream=YES;
+            else if(!strcmp(argv[i],"--duration-ms") && i+1<argc) {
+                char *end;unsigned long n=strtoul(argv[++i],&end,10);
+                if(!*argv[i] || *end || n<100 || n>3000)return 2;duration=(unsigned)n;
+            }
+            else if(!strcmp(argv[i],"--discover"))discover=YES;
             else if(!strcmp(argv[i],"--run"))run=YES;
             else if(!strcmp(argv[i],"--dry-run"))run=NO;
             else if(!strcmp(argv[i],"--layout") && i+1<argc) {
-                const char *name=argv[++i];profile=!strcmp(name,"rx")?-1:caiaq_probe_id(name);
+                layoutSet=YES;const char *name=argv[++i];profile=!strcmp(name,"rx")?-1:caiaq_probe_id(name);
                 if(profile<0 && strcmp(name,"rx"))return 2;
             } else if(!strcmp(argv[i],"--zero-offset") && i+1<argc) {
                 const char *name=argv[++i];if(strcmp(name,"start") && strcmp(name,"compact"))return 2;
                 zeroAtStart=!strcmp(name,"start");
             } else if(!strcmp(argv[i],"--buffer-guard") && i+1<argc) {
                 const char *n=argv[++i];if(strcmp(n,"0") && strcmp(n,"1"))return 2;guard=(unsigned)(n[0]-'0');
-            } else {fprintf(stderr,"Usage: %s [--run|--dry-run|--discover] [--layout observed|rx|PROFILE] [--zero-offset start|compact] [--buffer-guard 0|1]\n",argv[0]);return 2;}
+            } else {fprintf(stderr,"Usage: %s [--run|--dry-run|--discover] [--stream-silence --duration-ms 100..3000] [--layout observed|rx|PROFILE] [--zero-offset start|compact] [--buffer-guard 0|1]\n",argv[0]);return 2;}
+        }
+        if(stream && (layoutSet || !zeroAtStart || guard!=1 || discover)) {
+            fprintf(stderr,"stream-silence requires RX lengths, zero-offset=start, buffer-guard=1; excludes discover/layout\n");return 2;
         }
         setvbuf(stdout,NULL,_IOLBF,0);
-        printf("NATIVE CONFIG hardware=%s layout=%s zero-offset=%s backing-guard=%u (not transmitted), PCM=silence, one batch\n",
-            run?"ENABLED":"disabled",profile<0?"rx":caiaq_probe_names[profile],zeroAtStart?"start":"compact",guard);
+        printf("NATIVE CONFIG hardware=%s layout=%s zero-offset=%s backing-guard=%u (not transmitted), PCM=silence, mode=%s\n",
+            run?"ENABLED":"disabled",(profile<0 || stream)?"rx":caiaq_probe_names[profile],zeroAtStart?"start":"compact",guard,stream?"bounded RX stream":"one batch");
+        if(stream)printf("NATIVE CONFIG stream=silence duration_ms=%u (hard maximum 3000)\n",duration);
         if(discover) {
             if(run) {fprintf(stderr,"--discover excludes --run\n");return 2;}
             io_service_t service=caiaq_native_find_interface();
@@ -228,7 +389,7 @@ int main(int argc,const char **argv) {
         }
         if(!run)return 0;
         signal(SIGINT,on_signal);signal(SIGTERM,on_signal);
-        KoreNativeProbe *probe=[KoreNativeProbe new];probe->profile=profile;probe->zeroAtStart=zeroAtStart;probe->guardBytes=guard;
+        KoreNativeProbe *probe=[KoreNativeProbe new];probe->profile=profile;probe->zeroAtStart=zeroAtStart;probe->guardBytes=guard;probe->streamMode=stream;probe->streamDurationMs=duration;
         int rc=1;
         if([probe open]) {
             const unsigned char info[]={1},params[]={9,1,2,176,0,1};
@@ -237,10 +398,18 @@ int main(int argc,const char **argv) {
                 if(probe->replyLength>=15 && p[7]==4 && p[8]==2 && p[9]==0 && p[10]==0 && p[13]==2) {
                     if([probe exchange:params length:sizeof(params) reply:9] && probe->replyLength>=2 && probe->reply[1]==1) {
                         puts("NATIVE AUDIO_PARAMS accepted");
-                        dispatch_sync(probe->queue,^{[probe startISO];});
-                        if([probe waitForCompletion]) {
-                            dispatch_sync(probe->queue,^{/* queue barrier before inspecting result */});
-                            if(probe->outCompleted && !probe->failed)rc=0;
+                        if(stream) {
+                            dispatch_sync(probe->queue,^{[probe startStream];});
+                            if([probe waitForStream]) {
+                                dispatch_sync(probe->queue,^{});
+                                if(probe->streamFinished && !probe->failed && probe->outCompletedBatches)rc=0;
+                            }
+                        } else {
+                            dispatch_sync(probe->queue,^{[probe startISO];});
+                            if([probe waitForCompletion]) {
+                                dispatch_sync(probe->queue,^{});
+                                if(probe->outCompleted && !probe->failed)rc=0;
+                            }
                         }
                     } else fprintf(stderr,"NATIVE AUDIO_PARAMS not accepted; no ISO started\n");
                 } else fprintf(stderr,"NATIVE unexpected device specification; no AUDIO_PARAMS sent\n");

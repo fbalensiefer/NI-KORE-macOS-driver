@@ -36,6 +36,17 @@
     (void)error;assert(option==IOUSBHostAbortOptionSynchronous);aborts++;return YES;
 }
 @end
+@interface DeferredBulkPipe : NSObject {
+@public NSMutableArray<IOUSBHostCompletionHandler> *callbacks;
+}
+@end
+@implementation DeferredBulkPipe
+- (instancetype)init {if((self=[super init]))callbacks=[NSMutableArray array];return self;}
+- (BOOL)enqueueIORequestWithData:(NSMutableData *)data completionTimeout:(NSTimeInterval)timeout
+                         error:(NSError **)error completionHandler:(IOUSBHostCompletionHandler)callback {
+    (void)data;(void)timeout;(void)error;[callbacks addObject:callback];return YES;
+}
+@end
 int main(void) {
     @autoreleasepool {
         assert(caiaq_native_identity(@{@"idVendor":@0x17cc,@"idProduct":@0x4711,@"bInterfaceNumber":@0}));
@@ -43,6 +54,16 @@ int main(void) {
         assert(!caiaq_native_identity(@{@"idVendor":@0x17cc,@"idProduct":@0x4711,@"bInterfaceNumber":@1}));
         assert(!caiaq_native_identity(@{@"idVendor":@0x17cc,@"idProduct":@0x4711}));
         assert(!caiaq_native_identity(@{@"idVendor":@"6092",@"idProduct":@0x4711,@"bInterfaceNumber":@0}));
+        KoreNativeProbe *bulkProbe=[KoreNativeProbe new];DeferredBulkPipe *bulk=[DeferredBulkPipe new];
+        bulkProbe->bulkIn=(IOUSBHostPipe *)bulk;
+        dispatch_sync(bulkProbe->queue,^{
+            bulkProbe->expected=9;bulkProbe->bulkGeneration=1;[bulkProbe armBulk];
+            bulkProbe->bulkGeneration=2;[bulkProbe armBulk];
+            bulk->callbacks[0](kIOReturnAborted,0);assert(!bulkProbe->failed && !bulkProbe->replySeen);
+            unsigned char *bytes=bulkProbe->bulkData.mutableBytes;bytes[0]=9;bytes[1]=1;
+            bulk->callbacks[1](kIOReturnSuccess,2);assert(bulkProbe->replySeen && bulkProbe->replyLength==2);
+        });
+        [bulk->callbacks removeAllObjects];bulkProbe->bulkIn=nil;
         for(int mode=0;mode<3;mode++) {
             KoreNativeProbe *probe=[KoreNativeProbe new];
             FakeNativePipe *in=[FakeNativePipe new],*out=[FakeNativePipe new];

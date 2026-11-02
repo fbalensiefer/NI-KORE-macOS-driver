@@ -8,6 +8,10 @@ cases=[([],0),(['--layout','rx'],0),(['--layout','observed'],0),
        (['--layout','bad'],2),(['--zero-offset','bad'],2),
        (['--buffer-guard','2'],2),(['--buffer-guard','1x'],2),
        (['--layout'],2)]
+cases += [(['--stream-silence'],0),(['--stream-silence','--duration-ms','100'],0),
+          (['--stream-silence','--duration-ms','3001'],2),(['--stream-silence','--duration-ms','0'],2),
+          (['--stream-silence','--duration-ms','x'],2),(['--stream-silence','--layout','rx'],2),
+          (['--stream-silence','--zero-offset','compact'],2),(['--stream-silence','--buffer-guard','0'],2)]
 for args,expected in cases:
     r=subprocess.run([str(exe),'--dry-run',*args],capture_output=True,text=True)
     assert r.returncode==expected,(args,r.returncode,r.stdout,r.stderr)

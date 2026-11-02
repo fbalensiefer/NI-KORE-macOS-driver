@@ -52,8 +52,9 @@ on the next available XHCI frame. The prototype is not a Linux start-frame port.
 
 The `observed` profile sends the exact previously rejected descriptor sequence.
 `--layout rx` instead uses successful first-IN actual lengths without changing
-order. All-zero RX batches fail closed in this one-shot prototype. No continuous
-stream scheduler or CoreAudio device is provided by this executable yet. The
+order. All-zero RX batches fail closed in this one-shot prototype. The one-shot mode does not expose a CoreAudio device. A bounded continuous
+RX-driven silence mode has since been implemented and hardware tested; see
+[NATIVE-STREAM-RESULTS.md](NATIVE-STREAM-RESULTS.md). The
 working libusb MIDI bridge remains unchanged and cannot run concurrently because
 both transports require exclusive ownership of interface 0.
 
@@ -130,3 +131,12 @@ reads registry properties: it opens no USB user client and sends no USB commands
 The native OUT workaround still has no hardware result; retry the original
 single-batch `--run` command to reach that test. No system configuration change,
 reset or elevated USB access is involved in the discovery fix.
+
+
+## Continuous silence milestone
+
+`--run --stream-silence --duration-ms 3000` uses 32 IN / 64 OUT slots, explicit
+contiguous frame scheduling and a fixed 32 ms OUT lead. Repeated authorized
+hardware runs and early-stop/reopen tests passed. See
+[NATIVE-STREAM-RESULTS.md](NATIVE-STREAM-RESULTS.md) for exact counts, the initial
+scheduling failure, offline regression coverage and limits. No tone was enabled.

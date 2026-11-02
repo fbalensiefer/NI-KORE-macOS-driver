@@ -51,8 +51,13 @@ build/test-native-transport: tests/test_native_transport.m audio/native_probe.m 
 	@mkdir -p build
 	$(CC) -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined -fobjc-arc -fblocks -mmacosx-version-min=12.0 -o $@ $< -framework Foundation -framework IOKit -framework IOUSBHost
 
-native-check: native-probe build/test-native-plan build/test-native-transport
+native-check: native-probe build/test-native-plan build/test-native-transport build/test-native-stream
 	./build/test-native-plan
 	./build/test-native-transport
 	./build/kore1-native-probe --dry-run --layout observed
 	python3 tests/test_native_cli.py
+	./build/test-native-stream
+
+build/test-native-stream: tests/test_native_stream.m audio/native_probe.m audio/native_plan.h audio/native_discovery.h audio/caiaq.h
+	@mkdir -p build
+	$(CC) -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined -fobjc-arc -fblocks -mmacosx-version-min=12.0 -o $@ $< -framework Foundation -framework IOKit -framework IOUSBHost
