@@ -26,3 +26,11 @@ kore-usb-descriptors
 kore1-bridge.c.backup
 kore1-bridge.c.pre-*
 .DS_Store
+
+actions-runner/
+kore1-bridge
+capture-blackhole
+kore-usb-descriptors
+kore1-bridge.c.backup
+kore1-bridge.c.pre-*
+.DS_Store
