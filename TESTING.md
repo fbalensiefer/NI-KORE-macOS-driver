@@ -12,7 +12,7 @@ bash automation/local_test.sh
 ```
 
 `make check` runs Python repository/patch checks, synthetic capture analysis and
-an optional Node syntax check. `audio-check` and `native-check` compile and run
+Node-based Mixxx behavior and syntax checks, final CLI validation and generation checks. `audio-check` and `native-check` compile and run
 actual C/Objective-C framing and callback tests with ASan/UBSan. The suite covers
 PCM byte order, channel isolation, variable packet lengths, explicit native
 transaction offsets, pool ownership, errors, deadlines and delayed cancellation.
@@ -30,7 +30,7 @@ Reads registry identity and link speed without opening a USB user client.
 ## Explicit hardware tests
 
 Use one KORE process at a time. Native audio and the libusb MIDI bridge cannot
-currently share interface 0. With speakers/headphones disconnected and output
+share interface 0. The final native bridge combines MIDI/audio in one owner. With speakers/headphones disconnected and output
 gain minimized, the native silence command is bounded to three seconds:
 
 ```sh
@@ -60,8 +60,7 @@ Do not run archived unbounded hardware scripts as routine tests.
 
 `coreaudio-check` loads the local signed bundle through CFPlugIn and tests its
 actual ABI, property protocol, threaded PCM queue and packer. It does not install
-or register a system audio device. Per user instruction the prototype remains
-local and uninstalled; see [CoreAudio status](docs/COREAUDIO-PROTOTYPE.md).
+or register a system audio device. The original offline-only instruction was superseded by an explicit system-install request; see [current integration validation](docs/NATIVE-INTEGRATION-VALIDATION.md).
 
 ## Standalone bridge and Mixxx package
 
@@ -69,5 +68,42 @@ local and uninstalled; see [CoreAudio status](docs/COREAUDIO-PROTOTYPE.md).
 components, then assembles a local zip. `make check` verifies source generation,
 Mixxx XML cue press/release routes, and mocked encoder/button/feedback/shutdown
 behavior. The package is architecture-specific and requires Homebrew libusb for
-the libusb executables. It is not a production driver installer. Mixxx application
-routing and concurrent native MIDI/audio remain unverified/unimplemented.
+the libusb executables. System installation remains an explicit command, never a build side effect.
+Mixxx application routing needs a manual UI check. See
+[installation and live system testing](docs/DEVELOPMENT-PACKAGE.md).
+
+## Explicit installed CoreAudio test
+
+```sh
+./build/kore1-final-bridge --install-system
+./build/kore1-final-bridge --system-status
+./build/kore-coreaudio-system-test --run
+```
+
+The last command renders into the virtual output and validates the real HAL
+property PCM path with no USB access. Run it before starting the bridge's PCM
+consumer, since the lease is exclusive. Tools running in a sandbox that blocks
+`com.apple.audio.audiohald` cannot query or test the installed device.
+
+Shared hardware silence validation:
+
+```sh
+./build/kore1-final-bridge --run --stream-silence --mixxx-feedback --duration-ms 3000
+```
+
+This also covers first-connection configuration selection, AUTO_MSG reports,
+CoreMIDI endpoint creation and feedback initialization. Native MIDI unit tests
+replace only final CoreMIDI delivery with a recorder and exercise the real bulk
+callbacks, controller decoding, idle timeout rearm, single receive-buffer owner,
+independent feedback queue and cancellation. CoreAudio tests cover box/device
+publication and required model metadata as well as PCM/clock properties.
+
+Full installed-path test (requires the authorized cable/gain setup):
+
+```sh
+python3 automation/coreaudio_loopback.py --run-tone
+```
+
+It starts timestamp-accounted capture before the supervised bridge, renders one
+second of capped tone through the virtual device, sends a concurrent LCD update,
+stops the USB owner, and analyzes the complete ten-second recording.

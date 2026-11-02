@@ -58,7 +58,8 @@ int main(void) {
         bulkProbe->bulkIn=(IOUSBHostPipe *)bulk;
         dispatch_sync(bulkProbe->queue,^{
             bulkProbe->expected=9;bulkProbe->bulkGeneration=1;[bulkProbe armBulk];
-            bulkProbe->bulkGeneration=2;[bulkProbe armBulk];
+            bulkProbe->bulkGeneration=2;bulkProbe->bulkPending=NO; /* synchronous retry abort released kernel buffer */
+            [bulkProbe armBulk];
             bulk->callbacks[0](kIOReturnAborted,0);assert(!bulkProbe->failed && !bulkProbe->replySeen);
             unsigned char *bytes=bulkProbe->bulkData.mutableBytes;bytes[0]=9;bytes[1]=1;
             bulk->callbacks[1](kIOReturnSuccess,2);assert(bulkProbe->replySeen && bulkProbe->replyLength==2);

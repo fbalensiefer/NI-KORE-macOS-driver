@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Isolated IOUSBHost transport prototype; no CoreAudio device or MIDI; tones require explicit opt-in.
+ * Shared IOUSBHost MIDI/audio transport; tones require explicit opt-in.
  * This process owns interface 0 exclusively. Never run beside the libusb bridge.
  */
 #import <Foundation/Foundation.h>
@@ -9,6 +9,7 @@
 #include "../coreaudio/pcm_source.h"
 #include "../coreaudio/client.h"
 #include "native_discovery.h"
+#include "controller_engine.h"
 #include <signal.h>
 #include <time.h>
 #import <IOKit/usb/USB.h>
@@ -42,8 +43,14 @@ static uint64_t native_now_ns(void) {
     NSMutableData *bulkData,*inData,*outData;
     IOUSBHostIsochronousTransaction inList[8],outList[8];
     int expected,profile,zeroAtStart,failed;
-    unsigned guardBytes,streamDurationMs,bulkGeneration;
-    BOOL streamMode,streamFinished,pcmMode,pcmTest;
+    unsigned guardBytes,streamDurationMs,bulkGeneration,inSlotCount,outSlotCount,outLeadFrames;
+    BOOL streamMode,streamFinished,pcmMode,pcmTest,continuous,midiMode,feedbackMode,bulkPending;
+    dispatch_queue_t controllerQueue,midiQueue;
+    dispatch_source_t controllerTimer,midiTimer;
+    _Atomic bool controllerActive;
+    _Atomic int controllerError;
+    _Atomic unsigned midiBacklog;
+    unsigned long long midiPackets,controllerWrites;
     uint64_t pcmHostStart,pcmProduced;
     AudioDeviceID pcmDevice;
     struct kore_pcm_ring pcmQueue;
@@ -76,7 +83,12 @@ static uint64_t native_now_ns(void) {
 - (instancetype)init {
     if((self=[super init])) {
         queue=dispatch_queue_create("kore.native.usb",DISPATCH_QUEUE_SERIAL);
+        inSlotCount=32;outSlotCount=64;outLeadFrames=32;
         done=dispatch_semaphore_create(0);bulkData=[NSMutableData dataWithLength:512];
+        controllerQueue=dispatch_queue_create("kore.native.controller",DISPATCH_QUEUE_SERIAL);
+        midiQueue=dispatch_queue_create("kore.native.midi",DISPATCH_QUEUE_SERIAL);
+        atomic_init(&controllerActive,false);
+        atomic_init(&controllerError,0);atomic_init(&midiBacklog,0);
         atomic_init(&pcmQueue.written,0);atomic_init(&pcmQueue.read,0);
         atomic_init(&pcmQueue.overruns,0);atomic_init(&pcmQueue.underruns,0);atomic_init(&pcmError,0);
     }
@@ -89,6 +101,9 @@ static uint64_t native_now_ns(void) {
 - (BOOL)open {
     NSError *error=nil;
     io_service_t service=caiaq_native_find_interface();
+    if(!service && caiaq_native_configure_if_needed(queue)) {
+        for(unsigned retry=0;retry<25 && !service;retry++){usleep(20000);service=caiaq_native_find_interface();}
+    }
     if(!service) {fprintf(stderr,"NATIVE KORE 1 interface 0 not found or ambiguous\n");return NO;}
     if(!caiaq_native_high_speed(service)) {
         fprintf(stderr,"NATIVE high-speed link not verified; refusing timing assumptions\n");
@@ -114,24 +129,36 @@ static uint64_t native_now_ns(void) {
             fprintf(stderr,"NATIVE unexpected ISO endpoint 0x%02x max=%u interval=%u\n",ep->bEndpointAddress,max,ep->bInterval);return NO;
         }
     }
-    puts("NATIVE KORE1 interface=0 alt=1, ISO endpoints validated; exclusive transport, no MIDI");
+    puts("NATIVE KORE1 interface=0 alt=1, ISO endpoints validated; shared native MIDI/audio transport");
     return YES;
 }
 - (void)armBulk {
-    if(stopping || failed)return;
+    if(stopping || failed || bulkPending)return;
     NSError *error=nil;
-    unsigned generation=bulkGeneration;
+    unsigned generation=bulkGeneration;bulkPending=YES;
     BOOL submitted=[bulkIn enqueueIORequestWithData:bulkData completionTimeout:0.5 error:&error
         completionHandler:^(IOReturn status,NSUInteger count) {
-        if(self->stopping || generation!=self->bulkGeneration)return;
+        if(generation!=self->bulkGeneration)return;
+        self->bulkPending=NO;
+        if(self->stopping)return;
+        if(self->midiMode && status==kIOReturnTimeout) {[self armBulk];return;}
         if(status!=kIOReturnSuccess || count>512) {fprintf(stderr,"NATIVE bulk IN status=0x%08x actual=%lu\n",status,(unsigned long)count);[self finishFailure:"bulk IN completion" error:nil];return;}
         const unsigned char *p=self->bulkData.bytes;
+        if(self->midiMode && count && (p[0]==2 || p[0]==3 || p[0]==4)) {
+            if(atomic_fetch_add(&self->midiBacklog,1)>=128) {atomic_fetch_sub(&self->midiBacklog,1);[self finishFailure:"controller backlog" error:nil];return;}
+            NSData *packet=[NSData dataWithBytes:p length:count];self->midiPackets++;
+            dispatch_async(self->midiQueue,^{
+                if(self->controllerActive)process(packet.bytes,(int)packet.length);
+                atomic_fetch_sub(&self->midiBacklog,1);
+            });
+        }
         if(count && p[0]==self->expected) {
             memcpy(self->reply,p,count);self->replyLength=count;self->replySeen=YES;
             dispatch_semaphore_signal(self->done);
-        } else [self armBulk];
+        }
+        if(self->midiMode || !self->replySeen)[self armBulk];
     }];
-    if(!submitted)[self finishFailure:"bulk IN submit" error:error];
+    if(!submitted) {bulkPending=NO;[self finishFailure:"bulk IN submit" error:error];}
 }
 - (BOOL)waitForCompletion {
     /* Main thread only; callbacks run on queue. Cancellation is bounded by abort. */
@@ -143,7 +170,7 @@ static uint64_t native_now_ns(void) {
     unsigned attempts=command==1?4:1;
     for(unsigned attempt=0;attempt<attempts && !interrupted;attempt++) {
         if(attempt) {
-            dispatch_sync(queue,^{self->stopping=YES;self->bulkGeneration++;});
+            dispatch_sync(queue,^{self->stopping=YES;self->bulkGeneration++;self->bulkPending=NO;});
             NSError *error=nil;
             if(![bulkIn abortWithOption:IOUSBHostAbortOptionSynchronous error:&error]) {
                 report_error("bulk retry abort",error);return NO;
@@ -224,8 +251,9 @@ static uint64_t native_now_ns(void) {
 }
 - (BOOL)streamCanContinue {
     if(stopping || failed)return NO;
+    if(atomic_load(&controllerError)) {[self finishFailure:"controller feedback" error:nil];return NO;}
     if(atomic_load(&pcmError)) {[self finishFailure:"PCM producer/prefetch" error:nil];return NO;}
-    if(native_now_ns()>=streamDeadline) {
+    if(!continuous && native_now_ns()>=streamDeadline) {
         stopping=YES;streamFinished=YES;dispatch_semaphore_signal(done);return NO;
     }
     return YES;
@@ -250,7 +278,7 @@ static uint64_t native_now_ns(void) {
     }
     uint64_t now=[interface frameNumberWithTime:NULL];
     if(!now) {[self finishFailure:"OUT frame clock" error:nil];return;}
-    if(!nextOutFrame)nextOutFrame=now+32;
+    if(!nextOutFrame)nextOutFrame=now+outLeadFrames;
     if(nextOutFrame<now+4) {[self finishFailure:"OUT scheduling deadline missed" error:nil];return;}
     slot->frame=nextOutFrame++;slot->busy=YES;outSubmitted++;
     unsigned busy=0;for(KoreNativeSlot *candidate in streamOuts)if(candidate->busy)busy++;
@@ -315,9 +343,10 @@ static uint64_t native_now_ns(void) {
     if(!submitted) {slot->busy=NO;[self finishFailure:"stream IN submit" error:error];}
 }
 - (void)startStream {
+    if(continuous){inSlotCount=128;outSlotCount=256;outLeadFrames=128;}
     streamIns=[NSMutableArray array];streamOuts=[NSMutableArray array];
-    for(unsigned i=0;i<32;i++)[streamIns addObject:[KoreNativeSlot new]];
-    for(unsigned i=0;i<64;i++)[streamOuts addObject:[KoreNativeSlot new]];
+    for(unsigned i=0;i<inSlotCount;i++)[streamIns addObject:[KoreNativeSlot new]];
+    for(unsigned i=0;i<outSlotCount;i++)[streamOuts addObject:[KoreNativeSlot new]];
     uint64_t now=[interface frameNumberWithTime:NULL];
     if(!now) {[self finishFailure:"stream frame clock" error:nil];return;}
     if(toneChannel && caiaq_tone_init(&tone,toneChannel,toneAmplitude)) {[self finishFailure:"tone configuration" error:nil];return;}
@@ -353,20 +382,26 @@ static uint64_t native_now_ns(void) {
             }
         });dispatch_resume(pcmTimer);
     }
-    streamStart=native_now_ns();streamDeadline=streamStart+(uint64_t)streamDurationMs*1000000;
+    streamStart=native_now_ns();streamDeadline=continuous?UINT64_MAX:streamStart+(uint64_t)streamDurationMs*1000000;
     nextInFrame=now+4;
+    if(!continuous) {
     streamTimer=dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER,0,0,queue);
     dispatch_source_set_timer(streamTimer,dispatch_time(DISPATCH_TIME_NOW,(int64_t)streamDurationMs*NSEC_PER_MSEC),DISPATCH_TIME_FOREVER,0);
     dispatch_source_set_event_handler(streamTimer,^{
         self->stopping=YES;self->streamFinished=YES;dispatch_semaphore_signal(self->done);
     });
     dispatch_resume(streamTimer);
-    printf("NATIVE STREAM %s: 32 IN / 64 OUT slots, OUT lead=32ms, 8 microframes each, explicit contiguous frame numbers\n",toneChannel?"OPT-IN SINGLE-CHANNEL TONE":pcmMode?"EXPLICIT PCM (capped .00025)":"silence");
+    }
+    printf("NATIVE STREAM %s: %u IN / %u OUT slots, OUT lead=%ums, 8 microframes each, explicit contiguous frame numbers\n",toneChannel?"OPT-IN SINGLE-CHANNEL TONE":pcmMode?"EXPLICIT PCM (capped .00025)":"silence",inSlotCount,outSlotCount,outLeadFrames);
     for(KoreNativeSlot *slot in streamIns) {if(failed || stopping)break;[self submitStreamIn:slot];}
 }
 - (BOOL)waitForStream {
-    for(unsigned elapsed=0;elapsed<streamDurationMs+500 && !interrupted;elapsed+=50)
-        if(!dispatch_semaphore_wait(done,dispatch_time(DISPATCH_TIME_NOW,50*NSEC_PER_MSEC)))return YES;
+    for(uint64_t elapsed=0;(continuous || elapsed<(uint64_t)streamDurationMs+500) && !interrupted;elapsed+=50)
+        if(!dispatch_semaphore_wait(done,dispatch_time(DISPATCH_TIME_NOW,50*NSEC_PER_MSEC))) {
+            __block BOOL finished;dispatch_sync(queue,^{finished=self->failed || self->streamFinished;});
+            if(finished)return YES;
+        }
+    if(interrupted && continuous)return YES;
     fprintf(stderr,"NATIVE stream wait timeout or signal\n");return NO;
 }
 - (void)reportStream {
@@ -378,10 +413,14 @@ static uint64_t native_now_ns(void) {
     if(pcmMode)printf("NATIVE RATE ratio=%.9f correction_ppm=%.2f priming_frames=%llu starvations=%llu target=%u calibrated=%d\n",
         pcmSource.matcher.ratio,(pcmSource.matcher.ratio-1)*1e6,(unsigned long long)pcmSource.matcher.priming_frames,(unsigned long long)pcmSource.matcher.starvations,pcmSource.matcher.target,pcmSource.matcher.warmup_frames>=48000);
     if(toneChannel)printf("NATIVE TONE channel=%u amplitude=%.8f frequency=440 PCM_rate=48000 generated_samples=%llu nonzero_samples=%llu\n",toneChannel,toneAmplitude,(unsigned long long)tone.generated,(unsigned long long)tone.nonzero);
-    printf("NATIVE STREAM layouts all_zero=%llu trailing_zero=%llu peak_OUT_busy=%llu/64\n",allZeroBatches,trailingZeroBatches,maxOutBusy);
+    printf("NATIVE STREAM layouts all_zero=%llu trailing_zero=%llu peak_OUT_busy=%llu/%u\n",allZeroBatches,trailingZeroBatches,maxOutBusy,outSlotCount);
 }
 - (BOOL)stop {
     dispatch_sync(queue,^{self->stopping=YES;if(self->streamTimer)dispatch_source_cancel(self->streamTimer);});
+    if(controllerTimer) {dispatch_source_cancel(controllerTimer);controllerTimer=nil;}
+    if(midiTimer) {dispatch_source_cancel(midiTimer);midiTimer=nil;}
+    dispatch_sync(midiQueue,^{self->controllerActive=NO;});
+    dispatch_sync(controllerQueue,^{controller_close();});
     if(pcmTimer) {dispatch_source_cancel(pcmTimer);dispatch_sync(pcmDispatch,^{});pcmTimer=nil;}
     if(pcmDevice)kore_coreaudio_lease(pcmDevice,NO);
     BOOL success=YES;
@@ -399,7 +438,7 @@ static uint64_t native_now_ns(void) {
     __block unsigned pending=0;
     do {
         dispatch_sync(queue,^{
-            pending=0;
+            pending=self->bulkPending?1:0;
             for(KoreNativeSlot *slot in self->streamIns)if(slot->busy)pending++;
             for(KoreNativeSlot *slot in self->streamOuts)if(slot->busy)pending++;
         });
@@ -409,10 +448,51 @@ static uint64_t native_now_ns(void) {
     if(pending) {fprintf(stderr,"NATIVE callback drain timeout pending=%u; retaining buffers\n",pending);return NO;}
     [interface destroy];dispatch_sync(queue,^{});
     if(streamMode)[self reportStream];
+    if(midiMode)printf("NATIVE MIDI reports=%llu backlog=%u feedback_error=%d feedback_writes=%llu\n",midiPackets,atomic_load(&midiBacklog),atomic_load(&controllerError),controllerWrites);
     streamTimer=nil;
     puts("NATIVE transport closed");return YES;
 }
 @end
+static int native_controller_send(void *context,const unsigned char *bytes,int length) {
+    KoreNativeProbe *probe=(__bridge KoreNativeProbe *)context;
+    NSError *error=nil;NSUInteger sent=0;
+    NSMutableData *data=[NSMutableData dataWithBytes:bytes length:(NSUInteger)length];
+    if(![probe->bulkOut sendIORequestWithData:data bytesTransferred:&sent completionTimeout:0.5 error:&error] || sent!=(NSUInteger)length) {
+        if(error)report_error("controller bulk OUT",error);return -1;
+    }
+    probe->controllerWrites++;return 0;
+}
+@interface KoreNativeProbe (Controller)
+- (BOOL)startMIDI;
+@end
+@implementation KoreNativeProbe (Controller)
+- (BOOL)startMIDI {
+    __block int result;
+    dispatch_sync(controllerQueue,^{
+        result=controller_open(native_controller_send,(__bridge void *)self,self->feedbackMode);
+        self->controllerActive=result==0;
+    });
+    if(result)return NO;
+    dispatch_sync(queue,^{self->midiMode=YES;self->expected=-1;[self armBulk];});
+    dispatch_sync(controllerQueue,^{
+        const unsigned char automsg[]={0x0b,1,10,5};
+        result=send_usb(automsg,sizeof(automsg));
+        if(!result && self->feedbackMode)result=feedback_initialize();
+    });
+    if(result)return NO;
+    controllerTimer=dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER,0,0,controllerQueue);
+    dispatch_source_set_timer(controllerTimer,dispatch_time(DISPATCH_TIME_NOW,0),10*NSEC_PER_MSEC,NSEC_PER_MSEC);
+    dispatch_source_set_event_handler(controllerTimer,^{
+        if(self->controllerActive && controller_tick())atomic_store(&self->controllerError,1);
+    });dispatch_resume(controllerTimer);
+    midiTimer=dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER,0,0,midiQueue);
+    dispatch_source_set_timer(midiTimer,dispatch_time(DISPATCH_TIME_NOW,0),10*NSEC_PER_MSEC,NSEC_PER_MSEC);
+    dispatch_source_set_event_handler(midiTimer,^{if(self->controllerActive)controller_input_tick();});dispatch_resume(midiTimer);
+    puts("NATIVE MIDI ready: KORE 1 Bridge; feedback=KORE 1 Feedback when enabled");
+    return YES;
+}
+@end
+#ifndef KORE_NATIVE_NO_MAIN
 int main(int argc,const char **argv) {
     @autoreleasepool {
         int profile=caiaq_probe_id("observed"),zeroAtStart=1;unsigned guard=1;BOOL run=NO,discover=NO,stream=NO,pcmMode=NO,pcmTest=NO,layoutSet=NO,silenceSet=NO,amplitudeSet=NO;unsigned duration=3000,toneChannel=0;double toneAmplitude=0.00025;
@@ -503,3 +583,5 @@ int main(int argc,const char **argv) {
         return rc;
     }
 }
+
+#endif
