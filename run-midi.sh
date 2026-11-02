@@ -1,3 +1,4 @@
 #!/bin/sh
+set -eu
 cd "$(dirname "$0")"
-exec ./kore1-bridge --mixxx-feedback
+exec ./build/kore1-final-bridge --mixxx-feedback "$@"

@@ -5,13 +5,16 @@ LIBUSB_LIBS := $(shell pkg-config --libs libusb-1.0 2>/dev/null)
 TARGET := build/kore-midi-v10
 
 .PHONY: all clean check
-all: $(TARGET)
+all: $(TARGET) bridge
 
 $(TARGET): src/kore-midi-v10.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) $(LIBUSB_CFLAGS) -o $@ $< $(LIBUSB_LIBS) -framework CoreMIDI -framework CoreFoundation -lpthread
 
 check:
+	python3 automation/generate_bridge.py --check
+	python3 tests/test_mixxx_xml.py
+	node tests/test_mixxx.js
 	python3 test_repository.py
 	python3 tests/test_audio_patch.py
 	python3 test_patch.py
@@ -108,3 +111,15 @@ build/test-coreaudio-bundle: tests/test_coreaudio_bundle.m
 build/test-rate-match: tests/test_rate_match.c coreaudio/rate_match.h coreaudio/pcm_ring.h
 	@mkdir -p build
 	$(CC) -std=c11 -Wall -Wextra -Werror -O2 -g -fsanitize=address,undefined -o $@ $< -lm
+
+# Reproducible standalone C bridge and complete local development package.
+.PHONY: bridge development-package
+bridge: build/kore1-final-bridge
+kore1-final-bridge.c: kore1-bridge-audio.c audio/caiaq.h automation/generate_bridge.py
+	python3 automation/generate_bridge.py
+build/kore1-final-bridge: kore1-final-bridge.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -Werror $(LIBUSB_CFLAGS) -o $@ $< $(LIBUSB_LIBS) -framework CoreMIDI -framework CoreFoundation -lpthread -lm
+
+development-package: bridge all native-probe hal-capture coreaudio-prototype build/kore-coreaudio-render
+	python3 automation/package_development.py

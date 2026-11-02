@@ -43,3 +43,14 @@ Prior development occurred as standalone `kore-midi-v3` through `v9` prototypes 
 - Verify 15 simulated minutes over +/-500 ppm and a capped host-paced PCM hardware
   test with gap-free capture. Keep CoreAudio uninstalled and distinguish these
   results from sustained hardware clock lock or full-band audio quality.
+
+## 2026-11-02 — consolidated development package
+
+- Generate a standalone C MIDI/libusb audio bridge from maintained sources;
+  `make bridge` compiles it and `--check` verifies reproducibility.
+- Add a local zip with compiled bridges, native audio tools, CoreAudio prototype,
+  Mixxx mappings, source and licensing, plus SHA-256 provenance manifest.
+- Fix cue Note Off routing in the new Mixxx mapping, guard optional metadata API,
+  and disconnect metadata callbacks during shutdown. Preserve original v10 files.
+- Update build/run entry points and document transport exclusivity and unfinished
+  CoreAudio integration. Packaging never installs a HAL plug-in or opens USB.

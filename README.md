@@ -19,6 +19,25 @@ or verified in the system HAL. KORE audio-input capture is not implemented.
 | CoreAudio / PCM feed | Local output plug-in and bounded bridge prototype; real host testing pending |
 | KORE audio input | Not implemented |
 
+## Consolidated bridge and development package
+
+```sh
+./build.sh
+./run-midi.sh
+```
+
+Builds `build/kore1-final-bridge` from the reproducible single-file
+[kore1-final-bridge.c](kore1-final-bridge.c), plus the native audio tools and local
+CoreAudio plug-in. The compiled collection is
+`build/KORE1-macOS-development.zip`; nothing is installed in the system.
+The consolidated C executable supports MIDI/LED/LCD and experimental libusb audio;
+the hardware-verified native audio transport remains separate and cannot run
+concurrently with it. This is not a finished unified CoreAudio/MIDI driver.
+
+New Mixxx files are [mixxx/KORE-1.midi.xml](mixxx/KORE-1.midi.xml) and
+[mixxx/KORE-1.js](mixxx/KORE-1.js), including cue release mappings and tested feedback
+message generation. See [package instructions and remaining limits](docs/DEVELOPMENT-PACKAGE.md).
+
 ## Build
 
 Requires macOS 12 or later, a current Xcode Command Line Tools SDK including
@@ -43,7 +62,7 @@ C/Objective-C tests use AddressSanitizer and UndefinedBehaviorSanitizer.
 
 Creates MIDI source `KORE 1 Bridge` and opt-in destination `KORE 1 Feedback`.
 Default mappings: relative CC20–27 for encoders, notes36–67 for buttons,
-CC40–42 for analog controls. Mixxx mappings are the root `KORE-1-Mixxx-v10.*` files.
+CC40–42 for analog controls. Current Mixxx mappings are in `mixxx/`; the root `KORE-1-Mixxx-v10.*` files are preserved for compatibility.
 See [architecture](ARCHITECTURE.md), [protocol](PROTOCOL.md) and [testing](TESTING.md).
 
 ## Native audio diagnostics

@@ -62,3 +62,12 @@ Do not run archived unbounded hardware scripts as routine tests.
 actual ABI, property protocol, threaded PCM queue and packer. It does not install
 or register a system audio device. Per user instruction the prototype remains
 local and uninstalled; see [CoreAudio status](docs/COREAUDIO-PROTOTYPE.md).
+
+## Standalone bridge and Mixxx package
+
+`make development-package` compiles the generated C bridge and all native/CoreAudio
+components, then assembles a local zip. `make check` verifies source generation,
+Mixxx XML cue press/release routes, and mocked encoder/button/feedback/shutdown
+behavior. The package is architecture-specific and requires Homebrew libusb for
+the libusb executables. It is not a production driver installer. Mixxx application
+routing and concurrent native MIDI/audio remain unverified/unimplemented.
