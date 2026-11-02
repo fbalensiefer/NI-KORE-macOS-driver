@@ -151,6 +151,14 @@ static void scheduler(void) {
     audio_send_silence_matching_rx(rx);
     assert(submits==before_probe_failure+1 && audio_layout_sent && !running && !audio_layout_completed);
     audio_send_silence_matching_rx(rx);assert(submits==before_probe_failure+1);
+    unsigned observed[8],last_data[8];size_t positions[8],observed_total,last_total;
+    assert(!caiaq_probe_layout((unsigned)caiaq_probe_id("observed"),observed));
+    assert(!caiaq_probe_layout((unsigned)caiaq_probe_id("observed-last-data"),last_data));
+    assert(!caiaq_layout(observed,8,4096,positions,&observed_total));
+    assert(!caiaq_layout(last_data,8,4096,positions,&last_total));
+    assert(observed_total==704 && last_total==observed_total);
+    assert(!memcmp(observed,last_data,6*sizeof(unsigned)));
+    assert(last_data[6]==observed[7] && last_data[7]==observed[6]);
     unsigned invalid[8];assert(caiaq_probe_layout(CAIAQ_PROBE_COUNT,invalid)==-1);
     assert(caiaq_probe_id("unknown")==-1);
     audio_layout_probe=-1;

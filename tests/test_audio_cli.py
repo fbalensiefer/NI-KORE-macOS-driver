@@ -12,7 +12,7 @@ cases=[(['--audio-fixed96-silence'],0),(['--audio-init-only'],0),
        (['--audio-max-amplitude','nan'],2),(['--audio-max-amplitude','.002'],2),
        (['--audio-duration-ms','0'],2),(['--audio-duration-ms','3x'],2),
        (['--audio-tone-channel','5'],2)]
-profiles=['uniform96','uniform176','leading-zero','trailing-zero','interior-zero','observed','variable-nonzero']
+profiles=['uniform96','uniform176','leading-zero','trailing-zero','interior-zero','observed','variable-nonzero','observed-last-data']
 cases += [(['--audio-layout-probe',name],0) for name in profiles]
 cases += [(['--audio-layout-probe','observed',flag],2) for flag in
           ['--headphone-tone','--pcm-fifo','--audio-fixed96-silence','--audio-rx-matched-zero','--audio-init-only']]

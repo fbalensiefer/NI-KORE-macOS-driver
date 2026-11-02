@@ -12,9 +12,9 @@
 #define CAIAQ_MAX_PACKETS 8u
 #define CAIAQ_MAX_AMPLITUDE 0.001 /* -60 dBFS */
 /* Synthetic submission probes, never a playback clock or routing strategy. */
-#define CAIAQ_PROBE_COUNT 7u
+#define CAIAQ_PROBE_COUNT 8u
 static const char *const caiaq_probe_names[CAIAQ_PROBE_COUNT]={
-    "uniform96","uniform176","leading-zero","trailing-zero","interior-zero","observed","variable-nonzero"
+    "uniform96","uniform176","leading-zero","trailing-zero","interior-zero","observed","variable-nonzero","observed-last-data"
 };
 static inline int caiaq_probe_id(const char *name) {
     for(unsigned i=0;i<CAIAQ_PROBE_COUNT;i++) if(!strcmp(name,caiaq_probe_names[i])) return (int)i;
@@ -28,7 +28,8 @@ static inline int caiaq_probe_layout(unsigned id,unsigned lengths[8]) {
         {176,176,176,176,176,176,176,0},
         {176,176,176,0,176,176,176,176},
         {0,176,176,0,176,0,176,0},
-        {96,176,96,176,96,176,96,176}
+        {96,176,96,176,96,176,96,176},
+        {0,176,176,0,176,0,0,176}
     };
     if(id>=CAIAQ_PROBE_COUNT || !lengths)return -1;
     memcpy(lengths,vectors[id],sizeof(vectors[id]));return 0;

@@ -248,3 +248,45 @@ zero-placement results. If controls pass and only zero layouts fail, that suppor
 a zero-descriptor restriction on this host/endpoint, rather than a universal macOS
 rule. If only leading-zero fails, first-descriptor placement becomes the next
 hypothesis. If variable-nonzero fails too, variable-size handling remains suspect.
+
+
+## Probe results: final descriptor hypothesis
+
+Read complete local logs supplied by the user's hardware runs:
+
+| Profile / mode | Completed OUT descriptors | Bytes | Result |
+| --- | ---: | ---: | --- |
+| uniform96 | 8 | 768 | Completed, zero reported errors |
+| uniform176 | 8 | 1408 | Completed, zero reported errors |
+| variable-nonzero | 8 | 1088 | Completed, zero reported errors |
+| trailing-zero | 0 | 0 | Native invalid argument on submission |
+| interior-zero | 8 | 1232 | Completed, zero reported errors, including one zero descriptor |
+| leading-zero | 8 | 1232 | Completed, zero reported errors, including one zero descriptor |
+| Original RX-matched batch: 0,176,176,0,176,0,176,0 | 0 | 0 | Native invalid argument on submission |
+
+Leading and interior zeros are demonstrably accepted for these runs. Trailing
+zero is the distinguishing feature of the rejected layouts so far. This supports
+a final-descriptor constraint on the tested path, but single runs do not prove
+a deterministic kernel rule, and the original failing batch also has more zeros.
+No further physical audio output or DAC functionality has been established.
+
+New profile `observed-last-data` swaps only the last two descriptors of the
+original rejected batch: `0,176,176,0,176,0,0,176`. Total payload, descriptor count
+and number of zeros remain 704 bytes, eight descriptors and four zeros. It tests
+the final-descriptor hypothesis with the original smaller payload. This synthetic
+reordering is a diagnostic only; applying it to playback would change timing.
+There is no automatic reordering, padding or removal of RX-derived descriptors.
+
+`make check audio-check` passed after adding the profile, including ASan/UBSan,
+the production scheduler mock and 29 CLI cases. No new hardware run was performed
+by the agent. With speakers/headphones disconnected and gain minimized, the
+prepared one-batch test is:
+
+```sh
+LIBUSB_DEBUG=4 ./build/kore1-bridge-audio --audio-layout-probe observed-last-data --audio-duration-ms 1000 > /tmp/kore-layout-observed-last-data.log 2>&1
+```
+
+If it completes, repeat the matching `observed` profile in a separate process
+before treating last-descriptor position as reproducible. A timing-preserving
+scheduler adaptation still needs design and native testing; success of a reordered
+probe would not make reordering a valid audio implementation.

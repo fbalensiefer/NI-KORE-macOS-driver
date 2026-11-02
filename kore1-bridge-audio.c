@@ -458,7 +458,7 @@ static void audio_send_silence_matching_rx(struct libusb_transfer *rx) {
     } else {
         audio_tx_batches++;
         if(!audio_tx_first) {printf("AUDIO first OUT submitted: packets=%d total=%u (%s)\n",
-                AUDIO_PACKETS,offset,audio_out_fixed?"fixed lengths":"RX lengths including zero");audio_tx_first=1;}
+                AUDIO_PACKETS,offset,audio_layout_probe>=0?"synthetic layout":audio_out_fixed?"fixed lengths":"RX lengths including zero");audio_tx_first=1;}
     }
 }
 /* v0.13 experimental stream priming: submit one 8-packet OUT batch before
@@ -1391,7 +1391,7 @@ static void usage(const char *name) {
     puts("LED diagnostic: --led-list or --led-test NAME [--led-level 0..63] [--led-duration-ms 100..10000].");
     puts("WARNING: --led-test replaces all 32 LED brightness values, then sends all-off.");
     puts("--mixxx-feedback enables CoreMIDI destination KORE 1 Feedback, LED+LCD updates from Mixxx.");
-    puts("--audio-layout-probe uniform96|uniform176|leading-zero|trailing-zero|interior-zero|observed|variable-nonzero: ONE synthetic silence OUT batch after first IN completion.");
+    puts("--audio-layout-probe uniform96|uniform176|leading-zero|trailing-zero|interior-zero|observed|variable-nonzero|observed-last-data: ONE synthetic silence OUT batch after first IN completion.");
     puts("--audio-fixed96-silence: bounded silent OUT; --audio-init-only: handshake without ISO; --dry-run: no device access.");
     puts("--audio-duration-ms 100..30000 (default 5000); --audio-max-amplitude 0..0.001 (default .00025); --audio-tone-channel 1..4.");
     puts("--audio-probe (passive iso 0x82 IN monitor, no audio init); --audio-report-ms N (100..60000).");
