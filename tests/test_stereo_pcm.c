@@ -6,8 +6,8 @@ static int32_t decode(const unsigned char *b) {
     return x&0x800000?(int32_t)(x-0x1000000):(int32_t)x;
 }
 int main(void) {
-    for(unsigned gain=0;gain<2;gain++) {
-        double amplitude=gain?.001:.00025;struct kore_pcm_ring q={0};float input[128];
+    for(unsigned gain=0;gain<5;gain++) {
+        double amplitude=(double[]){.00025,.001,.01,.1,1}[gain];struct kore_pcm_ring q={0};float input[128];
         for(unsigned i=0;i<64;i++) {
             input[i*2]=i<16?(float)sin(i*.2):i<32?0:i<48?1:NAN;
             input[i*2+1]=i<16?0:i<32?(float)sin(i*.3):i<48?-.5:INFINITY;
@@ -24,12 +24,16 @@ int main(void) {
                 samples[stream][part]=buffer[byte];
                 if(part%3==2) {
                     int frame=(int)(pos/6)-1;int32_t expected=0;
-                    if(stream==1 && frame>=0 && frame<64)expected=caiaq_safe_sample(input[frame*2+ch]*amplitude,amplitude);
+                    if(stream==1 && frame>=0 && frame<64)expected=isfinite(input[frame*2+ch])?(int32_t)(input[frame*2+ch]*amplitude*8388607.):0;
                     assert(decode(samples[stream]+ch*3)==expected);
                 }
             }
         }
         assert(s.consumed==64);
     }
-    puts("PASS stereo PCM wire decode: exact independent L/R samples, inactive outputs, both bounded gains and non-finite silence");
+    assert(kore_pcm_sample(2,.1)==838860);
+    assert(kore_pcm_sample(-2,1)==-8388607);
+    assert(kore_pcm_sample(.5,NAN)==0);
+    assert(kore_pcm_sample(.5,1.01)==0);
+    puts("PASS stereo PCM wire decode: exact independent L/R samples, inactive outputs, five playback gains and non-finite silence");
 }

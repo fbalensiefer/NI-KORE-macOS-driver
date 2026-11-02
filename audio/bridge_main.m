@@ -5,8 +5,8 @@
 #include "native_probe.m"
 #include "system_install.h"
 static void bridge_usage(const char *name) {
-    printf("Usage: %s [--run|--dry-run] [--midi-only|--coreaudio-pcm|--stream-silence|--stream-tone 1..4] [--mixxx-feedback|--no-midi] [--pcm-gain 0..0.001] [--duration-ms 100..3000|--continuous]\n",name);
-    puts("Default: dry run, MIDI + silence. Default PCM gain is .00025; explicit ceiling .001 on logical outputs 3/4.");
+    printf("Usage: %s [--run|--dry-run] [--midi-only|--coreaudio-pcm|--stream-silence|--stream-tone 1..4] [--mixxx-feedback|--no-midi] [--pcm-gain 0..1] [--duration-ms 100..3000|--continuous]\n",name);
+    puts("Default: dry run, MIDI + silence. Default PCM gain is .00025; explicit playback ceiling 1 on logical outputs 3/4.");
     puts("--continuous explicitly enables ongoing silence/CoreAudio operation; Ctrl+C stops.");
     puts("--system-status | --install-system | --uninstall-system | --install-login | --uninstall-login | --emit-driver-plist");
 }
@@ -29,7 +29,7 @@ int main(int argc,const char **argv) {@autoreleasepool {
         else if(!strcmp(argv[i],"--no-midi")){midi=NO;feedback=NO;}
         else if(!strcmp(argv[i],"--pcm-gain") && i+1<argc) {
             char *end;pcmGain=strtod(argv[++i],&end);gainSet=YES;
-            if(!*argv[i] || *end || !isfinite(pcmGain) || pcmGain<0 || pcmGain>CAIAQ_MAX_AMPLITUDE)return 2;
+            if(!*argv[i] || *end || !isfinite(pcmGain) || pcmGain<0 || pcmGain>KORE_PCM_MAX_GAIN)return 2;
         }
         else if(!strcmp(argv[i],"--continuous"))continuous=YES;
         else if(!strcmp(argv[i],"--midi-only")){if(modeSet)return 2;modeSet=midiOnly=YES;}
@@ -46,7 +46,7 @@ int main(int argc,const char **argv) {@autoreleasepool {
     if((gainSet && !pcm) || (continuous && durationSet) || (midiOnly && !midi) || (toneChannel && (continuous || duration!=3000)))return 2;
     setvbuf(stdout,NULL,_IOLBF,0);
     printf("BRIDGE CONFIG hardware=%s MIDI=%d feedback=%d audio=%s continuous=%d duration_ms=%u\n",run?"ENABLED":"disabled",midi,feedback,midiOnly?"off":pcm?"CoreAudio PCM":toneChannel?"capped tone":"silence",continuous,duration);
-    if(pcm)printf("BRIDGE PCM gain=%.8f (ceiling=.001), stereo logical outputs 3/4\n",pcmGain);
+    if(pcm)printf("BRIDGE PCM gain=%.8f (playback ceiling=1), stereo logical outputs 3/4\n",pcmGain);
     if(!run)return 0;
     interrupted=0;signal(SIGINT,on_signal);signal(SIGTERM,on_signal);
     KoreNativeProbe *probe=[KoreNativeProbe new];

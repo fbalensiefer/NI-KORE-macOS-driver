@@ -24,9 +24,10 @@ def stop(process):
         try:process.wait(timeout=5)
         except subprocess.TimeoutExpired:process.kill();process.wait();raise RuntimeError('Forced teardown; run is invalid')
 def main():
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--run-tone',action='store_true');p.add_argument('--stereo-test',action='store_true');p.add_argument('--use-login-bridge',action='store_true');p.add_argument('--pcm-gain',type=float,default=.00025);args=p.parse_args()
-    if not math.isfinite(args.pcm_gain) or not 0<=args.pcm_gain<=.001:p.error('PCM test gain must be 0..0.001')
-    if args.use_login_bridge and args.pcm_gain!=.00025:p.error('Cannot change gain of the installed login bridge')
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--run-tone',action='store_true');p.add_argument('--stereo-test',action='store_true');p.add_argument('--use-login-bridge',action='store_true');p.add_argument('--pcm-gain',type=float,default=None);args=p.parse_args()
+    if args.pcm_gain is None:args.pcm_gain=.1 if args.use_login_bridge else .00025
+    if not math.isfinite(args.pcm_gain) or not 0<=args.pcm_gain<=.1:p.error('PCM test gain must be 0..0.1')
+    if args.use_login_bridge and args.pcm_gain!=.1:p.error('Cannot change gain of the installed login bridge')
     if not args.run_tone:print('Dry run: --run-tone required; no devices opened');return
     folder=ROOT/'artifacts'/('coreaudio-loopback-'+datetime.datetime.now().strftime('%Y%m%d-%H%M%S-%f'));folder.mkdir()
     wav=folder/'maya44.wav';timing=folder/'timing.json';capturelog=folder/'capture.log';bridgelog=folder/'bridge.log';renderlog=folder/'render.log'

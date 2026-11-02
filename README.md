@@ -11,8 +11,9 @@ and RX-matched audio concurrently through one USB interface owner.
 
 The new integration has passed offline callback, queue, controller, HAL ABI and
 rate-matching tests. Its live system/hardware validation must be checked against
-[the validation record](docs/NATIVE-INTEGRATION-VALIDATION.md). PCM remains capped
-to .00025 peak on logical outputs 3/4, with about 171ms reported output latency.
+[the validation record](docs/NATIVE-INTEGRATION-VALIDATION.md). The login bridge uses explicit PCM gain 0.1 (-20 dB) on logical outputs 3/4;
+the standalone CLI retains its quiet .00025 default. Reported output latency is
+about 171ms. Application playback gain is separate from the diagnostic tone cap.
 KORE audio input and full-level audio
 qualification are not implemented.
 

@@ -9,7 +9,9 @@ cases=[([],0),(['--help'],0),(['--dry-run','--coreaudio-pcm','--continuous','--m
        (['--stream-tone','0'],2),(['--stream-tone','3','--duration-ms','100'],2),
        (['--coreaudio-pcm','--midi-only'],2),(['--midi-only','--no-midi'],2),
        (['--install-system','--dry-run'],2),(['--stream-tone','3'],0)]
-cases += [(['--coreaudio-pcm','--pcm-gain','.001'],0),(['--coreaudio-pcm','--pcm-gain','0'],0),(['--coreaudio-pcm','--pcm-gain','.002'],2),(['--coreaudio-pcm','--pcm-gain','nan'],2),(['--pcm-gain','.00025'],2)]
+cases += [(['--coreaudio-pcm','--pcm-gain','.001'],0),(['--coreaudio-pcm','--pcm-gain','0'],0),(['--coreaudio-pcm','--pcm-gain','1.001'],2),(['--coreaudio-pcm','--pcm-gain','nan'],2),(['--pcm-gain','.00025'],2)]
+cases += [(['--coreaudio-pcm','--pcm-gain',v],0) for v in ['.01','.1','1']]
+cases += [(['--coreaudio-pcm','--pcm-gain',v],2) for v in ['-1','inf','-inf']]
 for args,expected in cases:
     r=subprocess.run([str(exe),*args],capture_output=True,text=True)
     assert r.returncode==expected,(args,r.stdout,r.stderr,r.returncode)

@@ -104,3 +104,36 @@ coincided: `bootout` can return while the old service is still registered as
 up to five seconds for the registration to disappear before bootstrapping.
 Two consecutive live re-install/start attempts both reached native stereo-stream
 readiness successfully. The normal PCM gain remains .00025.
+
+## Mixxx inaudible-output correction (2026-11-02)
+
+Mixxx successfully opened the virtual device, but the installed bridge still used
+0.00025 (-72 dB) gain. The diagnostic tone amplitude cap also incorrectly limited
+application PCM gain to 0.001. Playback now has its own finite 0..1 gain and
+signed-24-bit saturation; diagnostic oscillators retain their 0.001 cap. The CLI
+keeps its quiet default; the login installer explicitly selects 0.1 (-20 dB).
+The local, closed Mixxx configuration was backed up and set to 48000 Hz. Its log
+showed successful 44100 Hz opens, so that rate setting alone was not proven to
+cause silence.
+
+Two bounded stereo loopbacks with the headphone output connected to MAYA44 passed:
+
+| Gain | Artifact suffix | Left/right measured peak dBFS | Capture |
+|---|---|---|---|
+| 0.01 | 20261102-210351-905037 | -50.95 / -50.72 | 441000 frames, contiguous, no clipping |
+| 0.1 | 20261102-210417-317504 | -31.00 / -30.72 | 441000 frames, contiguous, no clipping |
+
+The 20 dB input change produced approximately 20 dB measured change. At 0.1,
+solo/dual levels agreed within 0.01 dB. This verifies bounded system-renderer
+playback, not actual Mixxx program material or long-run USB scheduling stability.
+The existing service has still shown deadline failures and automatic restarts.
+
+The updated binary was installed and its SHA256 matched the build. The login
+agent was regenerated with gain 0.1. Its first post-installation test
+(`20261102-210525-339641`) failed: left solo/dual difference 3.31 dB and suspect
+low-amplitude windows on both channels, despite contiguous capture and no
+service restart. Do not discard that failure or infer its cause from timing alone.
+The repeat (`20261102-210547-725372`) passed: left/right -31.00/-30.72 dBFS,
+solo/dual within 0.003 dB, zero suspect windows, no clipping, all 441000 frames,
+and unchanged PID 53412/run count 1. Installation is verified; sustained audio
+quality and actual Mixxx playback still require validation.

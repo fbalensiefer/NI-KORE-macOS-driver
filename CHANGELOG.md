@@ -79,3 +79,10 @@ Prior development occurred as standalone `kore-midi-v3` through `v9` prototypes 
 
 - Fix login-service reinstallation: wait for launchd bootout completion before
   bootstrap, including removal of an orphan service registration.
+
+### Mixxx playback gain correction
+
+- Separate application PCM gain (0..1, finite and saturated) from the capped
+  diagnostic oscillator; keep the CLI quiet default and set login playback to 0.1.
+- Verify bounded stereo loopbacks at 0.01 and 0.1 through the KORE headphone output
+  and MAYA44 capture, with contiguous capture and no clipping.

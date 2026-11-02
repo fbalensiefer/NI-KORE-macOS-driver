@@ -82,7 +82,7 @@ static int kore_login_install(BOOL remove) {
     if(![[NSFileManager defaultManager] isExecutableFileAtPath:binary])return 1;
     NSError *error=nil;
     if(![[NSFileManager defaultManager] createDirectoryAtPath:directory withIntermediateDirectories:YES attributes:nil error:&error]){report_error("login directory",error);return 1;}
-    NSDictionary *agent=@{@"Label":label,@"ProgramArguments":@[binary,@"--run",@"--coreaudio-pcm",@"--continuous",@"--mixxx-feedback"],
+    NSDictionary *agent=@{@"Label":label,@"ProgramArguments":@[binary,@"--run",@"--coreaudio-pcm",@"--continuous",@"--mixxx-feedback",@"--pcm-gain",@"0.1"],
         @"RunAtLoad":@YES,@"KeepAlive":@YES,@"ThrottleInterval":@10,@"ProcessType":@"Interactive",
         @"StandardOutPath":[NSHomeDirectory() stringByAppendingPathComponent:@"Library/Logs/KORE1-bridge.log"],
         @"StandardErrorPath":[NSHomeDirectory() stringByAppendingPathComponent:@"Library/Logs/KORE1-bridge-error.log"]};

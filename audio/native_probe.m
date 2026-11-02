@@ -393,7 +393,7 @@ static uint64_t native_now_ns(void) {
     dispatch_resume(streamTimer);
     }
     printf("NATIVE STREAM %s: %u IN / %u OUT slots, OUT lead=%ums, 8 microframes each, explicit contiguous frame numbers\n",toneChannel?"OPT-IN SINGLE-CHANNEL TONE":pcmMode?"EXPLICIT PCM (bounded gain)":"silence",inSlotCount,outSlotCount,outLeadFrames);
-    if(pcmMode)printf("NATIVE PCM gain=%.8f ceiling=0.001\n",pcmAmplitude);
+    if(pcmMode)printf("NATIVE PCM gain=%.8f playback ceiling=1\n",pcmAmplitude);
     for(KoreNativeSlot *slot in streamIns) {if(failed || stopping)break;[self submitStreamIn:slot];}
 }
 - (BOOL)waitForStream {

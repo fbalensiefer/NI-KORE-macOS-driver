@@ -536,6 +536,15 @@ struct kore_pcm_source {
     bool rate_match;struct kore_rate_match matcher;
     unsigned char bytes[6];
 };
+/* Playback gain is independent of the diagnostic oscillator's -60 dB cap.
+ * Clamp before conversion; non-finite input/gain produces silence. */
+#define KORE_PCM_MAX_GAIN 1.0
+static inline int32_t kore_pcm_sample(double value,double gain) {
+    if(!isfinite(value) || !isfinite(gain) || gain<0 || gain>KORE_PCM_MAX_GAIN)return 0;
+    if(value>1)value=1;
+    if(value< -1)value= -1;
+    return (int32_t)(value*gain*8388607.0);
+}
 static inline unsigned char kore_pcm_byte(void *context,unsigned stream) {
     struct kore_pcm_source *s=context;unsigned pos=(unsigned)(s->position[stream]++%6);
     if(stream!=1)return 0; /* verified headphone path: logical outputs 3/4 */
@@ -544,7 +553,7 @@ static inline unsigned char kore_pcm_byte(void *context,unsigned stream) {
         if(s->rate_match) {
             kore_rate_match_frame(&s->matcher,s->queue,values);s->consumed=s->matcher.input_frames;
         } else {size_t count=kore_pcm_pop(s->queue,values,1);s->consumed+=count;}
-        for(unsigned ch=0;ch<2;ch++)caiaq_s24be(s->bytes+ch*3,caiaq_safe_sample(values[ch]*s->amplitude,s->amplitude));
+        for(unsigned ch=0;ch<2;ch++)caiaq_s24be(s->bytes+ch*3,kore_pcm_sample(values[ch],s->amplitude));
     }
     return s->bytes[pos];
 }
@@ -1643,7 +1652,7 @@ static uint64_t native_now_ns(void) {
     dispatch_resume(streamTimer);
     }
     printf("NATIVE STREAM %s: %u IN / %u OUT slots, OUT lead=%ums, 8 microframes each, explicit contiguous frame numbers\n",toneChannel?"OPT-IN SINGLE-CHANNEL TONE":pcmMode?"EXPLICIT PCM (bounded gain)":"silence",inSlotCount,outSlotCount,outLeadFrames);
-    if(pcmMode)printf("NATIVE PCM gain=%.8f ceiling=0.001\n",pcmAmplitude);
+    if(pcmMode)printf("NATIVE PCM gain=%.8f playback ceiling=1\n",pcmAmplitude);
     for(KoreNativeSlot *slot in streamIns) {if(failed || stopping)break;[self submitStreamIn:slot];}
 }
 - (BOOL)waitForStream {
@@ -1928,7 +1937,7 @@ static int kore_login_install(BOOL remove) {
     if(![[NSFileManager defaultManager] isExecutableFileAtPath:binary])return 1;
     NSError *error=nil;
     if(![[NSFileManager defaultManager] createDirectoryAtPath:directory withIntermediateDirectories:YES attributes:nil error:&error]){report_error("login directory",error);return 1;}
-    NSDictionary *agent=@{@"Label":label,@"ProgramArguments":@[binary,@"--run",@"--coreaudio-pcm",@"--continuous",@"--mixxx-feedback"],
+    NSDictionary *agent=@{@"Label":label,@"ProgramArguments":@[binary,@"--run",@"--coreaudio-pcm",@"--continuous",@"--mixxx-feedback",@"--pcm-gain",@"0.1"],
         @"RunAtLoad":@YES,@"KeepAlive":@YES,@"ThrottleInterval":@10,@"ProcessType":@"Interactive",
         @"StandardOutPath":[NSHomeDirectory() stringByAppendingPathComponent:@"Library/Logs/KORE1-bridge.log"],
         @"StandardErrorPath":[NSHomeDirectory() stringByAppendingPathComponent:@"Library/Logs/KORE1-bridge-error.log"]};
@@ -1940,8 +1949,8 @@ static int kore_login_install(BOOL remove) {
 
 
 static void bridge_usage(const char *name) {
-    printf("Usage: %s [--run|--dry-run] [--midi-only|--coreaudio-pcm|--stream-silence|--stream-tone 1..4] [--mixxx-feedback|--no-midi] [--pcm-gain 0..0.001] [--duration-ms 100..3000|--continuous]\n",name);
-    puts("Default: dry run, MIDI + silence. Default PCM gain is .00025; explicit ceiling .001 on logical outputs 3/4.");
+    printf("Usage: %s [--run|--dry-run] [--midi-only|--coreaudio-pcm|--stream-silence|--stream-tone 1..4] [--mixxx-feedback|--no-midi] [--pcm-gain 0..1] [--duration-ms 100..3000|--continuous]\n",name);
+    puts("Default: dry run, MIDI + silence. Default PCM gain is .00025; explicit playback ceiling 1 on logical outputs 3/4.");
     puts("--continuous explicitly enables ongoing silence/CoreAudio operation; Ctrl+C stops.");
     puts("--system-status | --install-system | --uninstall-system | --install-login | --uninstall-login | --emit-driver-plist");
 }
@@ -1964,7 +1973,7 @@ int main(int argc,const char **argv) {@autoreleasepool {
         else if(!strcmp(argv[i],"--no-midi")){midi=NO;feedback=NO;}
         else if(!strcmp(argv[i],"--pcm-gain") && i+1<argc) {
             char *end;pcmGain=strtod(argv[++i],&end);gainSet=YES;
-            if(!*argv[i] || *end || !isfinite(pcmGain) || pcmGain<0 || pcmGain>CAIAQ_MAX_AMPLITUDE)return 2;
+            if(!*argv[i] || *end || !isfinite(pcmGain) || pcmGain<0 || pcmGain>KORE_PCM_MAX_GAIN)return 2;
         }
         else if(!strcmp(argv[i],"--continuous"))continuous=YES;
         else if(!strcmp(argv[i],"--midi-only")){if(modeSet)return 2;modeSet=midiOnly=YES;}
@@ -1981,7 +1990,7 @@ int main(int argc,const char **argv) {@autoreleasepool {
     if((gainSet && !pcm) || (continuous && durationSet) || (midiOnly && !midi) || (toneChannel && (continuous || duration!=3000)))return 2;
     setvbuf(stdout,NULL,_IOLBF,0);
     printf("BRIDGE CONFIG hardware=%s MIDI=%d feedback=%d audio=%s continuous=%d duration_ms=%u\n",run?"ENABLED":"disabled",midi,feedback,midiOnly?"off":pcm?"CoreAudio PCM":toneChannel?"capped tone":"silence",continuous,duration);
-    if(pcm)printf("BRIDGE PCM gain=%.8f (ceiling=.001), stereo logical outputs 3/4\n",pcmGain);
+    if(pcm)printf("BRIDGE PCM gain=%.8f (playback ceiling=1), stereo logical outputs 3/4\n",pcmGain);
     if(!run)return 0;
     interrupted=0;signal(SIGINT,on_signal);signal(SIGTERM,on_signal);
     KoreNativeProbe *probe=[KoreNativeProbe new];
