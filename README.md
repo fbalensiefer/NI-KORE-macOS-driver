@@ -11,10 +11,17 @@ and RX-matched audio concurrently through one USB interface owner.
 
 The new integration has passed offline callback, queue, controller, HAL ABI and
 rate-matching tests. Its live system/hardware validation must be checked against
-[the validation record](docs/NATIVE-INTEGRATION-VALIDATION.md). PCM remains capped
-to .00025 peak on logical outputs 3/4, with about 171ms reported output latency.
+[the validation record](docs/NATIVE-INTEGRATION-VALIDATION.md). The device exposes Main on channels 1/2 and Headphones on 3/4. The login bridge
+uses separate software gains: Main 0.2 (-14 dB), Headphones 1 (0 dB);
+the standalone CLI retains its quiet .00025 default. Reported output latency is
+about 171ms. Application playback gain is separate from the diagnostic tone cap.
 KORE audio input and full-level audio
 qualification are not implemented.
+
+The stereo headphone path has now been recorded with independent 440/660Hz
+left/right signals and a dual-channel window. Both channels were detected with
+continuous capture; final installation encountered a CoreAudio initialization
+block requiring a Mac restart and revalidation; see [stereo results and remaining measurement limits](docs/STEREO-OUTPUT-RESULTS.md).
 
 ## Build, install and run
 

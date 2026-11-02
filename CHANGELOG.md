@@ -66,3 +66,33 @@ Prior development occurred as standalone `kore-midi-v3` through `v9` prototypes 
   startup/removal, backup preservation and embedded bundle metadata.
 - Add actual system HAL PCM integration test, final CLI safety checks and native
   MIDI callback regression tests. Live validation is recorded separately.
+
+## 2026-11-02 — stereo headphone validation
+
+- Add bounded left/right/dual 440/660Hz CoreAudio test patterns and all-channel
+  stereo loopback analysis, including capture continuity and negative controls.
+- Test the installed login service directly without a competing USB consumer.
+- Add explicit finite PCM gain 0..0.001 (default .00025) for controlled measurements,
+  preserving the original ceiling and normal startup level.
+- Verify exact independent signed24 wire samples and record both real stereo
+  measurements. Cable pinout and full quality/clock qualification remain open.
+
+- Fix login-service reinstallation: wait for launchd bootout completion before
+  bootstrap, including removal of an orphan service registration.
+
+### Mixxx playback gain correction
+
+- Separate application PCM gain (0..1, finite and saturated) from the capped
+  diagnostic oscillator; keep the CLI quiet default and set login playback to 0.1.
+- Verify bounded stereo loopbacks at 0.01 and 0.1 through the KORE headphone output
+  and MAYA44 capture, with contiguous capture and no clipping.
+
+### Four-channel Main and headphone output
+
+- Expose Main L/R on CoreAudio channels 1/2 and Headphones L/R on 3/4 at 48kHz.
+- Carry all four channels through the HAL IPC, ring, shared ASRC and native USB
+  packer; reject legacy stereo IPC instead of misreading its frame layout.
+- Add independent Main/headphone gain options. Login defaults: Main 0.2,
+  Headphones 1. Keep diagnostic tone caps and the quiet standalone CLI default.
+- Verify Main stereo at gains 0.1/0.2 against the user's known MAYA44 wiring;
+  document capture-start timeout and unverified analog headphone unity level.

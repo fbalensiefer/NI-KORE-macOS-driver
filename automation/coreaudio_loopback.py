@@ -3,12 +3,15 @@
 import argparse
 import datetime
 import json
+import math
 from pathlib import Path
 import signal
 import subprocess
 import time
 from measure_native_quality import measure
+from analyze_stereo_capture import analyze as analyze_stereo
 ROOT=Path(__file__).resolve().parents[1]
+BIN=ROOT/'build' if (ROOT/'build/kore1-final-bridge').is_file() else ROOT
 def wait_ready(process,path,marker,timeout):
     until=time.monotonic()+timeout
     while marker not in path.read_text():
@@ -21,25 +24,48 @@ def stop(process):
         try:process.wait(timeout=5)
         except subprocess.TimeoutExpired:process.kill();process.wait();raise RuntimeError('Forced teardown; run is invalid')
 def main():
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--run-tone',action='store_true');args=p.parse_args()
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--run-tone',action='store_true');p.add_argument('--stereo-test',action='store_true');p.add_argument('--headphones',action='store_true');p.add_argument('--use-login-bridge',action='store_true');p.add_argument('--pcm-gain',type=float,default=None);args=p.parse_args()
+    if args.use_login_bridge:
+        if args.pcm_gain is not None:p.error('Cannot change gain of the installed login bridge')
+    else:
+        if args.pcm_gain is None:args.pcm_gain=.00025
+        if not math.isfinite(args.pcm_gain) or not 0<=args.pcm_gain<=.25:p.error('PCM test gain must be 0..0.25')
     if not args.run_tone:print('Dry run: --run-tone required; no devices opened');return
     folder=ROOT/'artifacts'/('coreaudio-loopback-'+datetime.datetime.now().strftime('%Y%m%d-%H%M%S-%f'));folder.mkdir()
     wav=folder/'maya44.wav';timing=folder/'timing.json';capturelog=folder/'capture.log';bridgelog=folder/'bridge.log';renderlog=folder/'render.log'
     capture=bridge=None
     try:
         with capturelog.open('w') as c,bridgelog.open('w') as b,renderlog.open('w') as r:
-            capture=subprocess.Popen([str(ROOT/'build/kore-hal-capture'),'--record',str(wav),'--report',str(timing),'--seconds','10'],stdout=c,stderr=subprocess.STDOUT)
+            capture=subprocess.Popen([str(BIN/'kore-hal-capture'),'--record',str(wav),'--report',str(timing),'--seconds','10'],stdout=c,stderr=subprocess.STDOUT)
             wait_ready(capture,capturelog,'CAPTURE READY',5)
-            bridge=subprocess.Popen([str(ROOT/'build/kore1-final-bridge'),'--run','--coreaudio-pcm','--continuous','--mixxx-feedback'],stdout=b,stderr=subprocess.STDOUT)
-            wait_ready(bridge,bridgelog,'NATIVE STREAM',6)
-            render=subprocess.run([str(ROOT/'build/kore-coreaudio-render'),'--run','--feedback'],stdout=r,stderr=subprocess.STDOUT,timeout=6)
+            agent_before=None;login_arguments=None
+            if args.use_login_bridge:
+                import os,re
+                service=f'gui/{os.getuid()}/org.nikore.bridge'
+                def agent_state():
+                    text=subprocess.check_output(['/bin/launchctl','print',service],text=True)
+                    if 'state = running' not in text:raise RuntimeError('Login bridge not running')
+                    return re.search(r'\bpid = (\d+)',text).group(1),re.search(r'\bruns = (\d+)',text).group(1)
+                agent_before=agent_state()
+                import plistlib
+                login_arguments=plistlib.loads((Path.home()/'Library/LaunchAgents/org.nikore.bridge.plist').read_bytes())['ProgramArguments']
+                error_log=Path.home()/'Library/Logs/KORE1-bridge-error.log';error_offset=error_log.stat().st_size
+            else:
+                bridge=subprocess.Popen([str(BIN/'kore1-final-bridge'),'--run','--coreaudio-pcm','--continuous','--mixxx-feedback','--pcm-gain',str(args.pcm_gain)],stdout=b,stderr=subprocess.STDOUT)
+                wait_ready(bridge,bridgelog,'NATIVE STREAM',6)
+            command=[str(BIN/'kore-coreaudio-render'),'--run','--feedback']
+            if args.stereo_test:command.append('--stereo-test')
+            if args.headphones:command.append('--headphones')
+            render=subprocess.run(command,stdout=r,stderr=subprocess.STDOUT,timeout=8)
             stop(bridge)
-            if render.returncode or bridge.returncode:raise RuntimeError('Render/shared bridge failed')
+            if render.returncode or (bridge and bridge.returncode):raise RuntimeError('Render/shared bridge failed')
+            if args.use_login_bridge and (agent_state()!=agent_before or error_log.stat().st_size!=error_offset):raise RuntimeError('Login service restarted or logged an error during test')
             if capture.wait(timeout=12):raise RuntimeError('MAYA44 capture failed')
-        result=measure(wav,timing,bridgelog)
-        result.update(bridge_exit=bridge.returncode,render_exit=render.returncode,capture_exit=capture.returncode)
+        result=analyze_stereo(wav,timing) if args.stereo_test else measure(wav,timing,None if args.use_login_bridge else bridgelog)
+        result.update(login_arguments=login_arguments,output_pair='headphones' if args.headphones else 'main',requested_pcm_gain=args.pcm_gain,agent_state=agent_before,bridge_exit=bridge.returncode if bridge else None,use_login_bridge=args.use_login_bridge,render_exit=render.returncode,capture_exit=capture.returncode)
         (folder/'result.json').write_text(json.dumps(result,indent=2)+'\n')
         print(folder);print(json.dumps(result,indent=2))
+        if not result.get('pass',True):raise RuntimeError('Stereo criteria not met; inspect result.json')
     finally:
         stop(bridge);stop(capture)
 if __name__=='__main__':main()

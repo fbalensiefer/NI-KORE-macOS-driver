@@ -7,7 +7,7 @@
 #ifdef KORE_HAL_PLUGIN
 /* BEGIN coreaudio/plugin.c */
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Experimental fixed 48k stereo virtual output. USB stays in a separate process.
+ * Experimental fixed 48k four-channel virtual output. USB stays in a separate process.
  * Host-marshalled CFData custom property transports PCM; no shared files/socket.
  */
 #include <CoreAudio/AudioServerPlugIn.h>
@@ -33,19 +33,21 @@
 _Static_assert(ATOMIC_LLONG_LOCK_FREE==2,"Realtime PCM queue requires lock-free 64-bit atomics");
 struct kore_pcm_ring {
     _Atomic uint64_t written,read,overruns,underruns;
-    float samples[KORE_PCM_CAPACITY][2];
+    unsigned channels; /* zero retains stereo for diagnostic callers; immutable while running */
+    float samples[KORE_PCM_CAPACITY][4];
 };
+static inline unsigned kore_pcm_channels(const struct kore_pcm_ring *q) {return q->channels==4?4:2;}
 static inline size_t kore_pcm_push(struct kore_pcm_ring *q,const float *stereo,size_t frames) {
     uint64_t w=atomic_load_explicit(&q->written,memory_order_relaxed),r=atomic_load_explicit(&q->read,memory_order_acquire);
     if(w-r>KORE_PCM_CAPACITY || frames>KORE_PCM_CAPACITY-(w-r)) {atomic_fetch_add(&q->overruns,1);return 0;}
-    for(size_t i=0;i<frames;i++)for(unsigned ch=0;ch<2;ch++)q->samples[(w+i)%KORE_PCM_CAPACITY][ch]=stereo[i*2+ch];
+    for(size_t i=0;i<frames;i++)for(unsigned ch=0;ch<kore_pcm_channels(q);ch++)q->samples[(w+i)%KORE_PCM_CAPACITY][ch]=stereo[i*kore_pcm_channels(q)+ch];
     atomic_store_explicit(&q->written,w+frames,memory_order_release);return frames;
 }
 static inline size_t kore_pcm_pop(struct kore_pcm_ring *q,float *stereo,size_t frames) {
     uint64_t r=atomic_load_explicit(&q->read,memory_order_relaxed),w=atomic_load_explicit(&q->written,memory_order_acquire);
     size_t count=w-r<frames?(size_t)(w-r):frames;
     if(w-r>KORE_PCM_CAPACITY)return 0;
-    for(size_t i=0;i<count;i++)for(unsigned ch=0;ch<2;ch++)stereo[i*2+ch]=q->samples[(r+i)%KORE_PCM_CAPACITY][ch];
+    for(size_t i=0;i<count;i++)for(unsigned ch=0;ch<kore_pcm_channels(q);ch++)stereo[i*kore_pcm_channels(q)+ch]=q->samples[(r+i)%KORE_PCM_CAPACITY][ch];
     atomic_store_explicit(&q->read,r+count,memory_order_release);
     if(count<frames)atomic_fetch_add(&q->underruns,frames-count);
     return count;
@@ -57,10 +59,10 @@ static inline size_t kore_pcm_pop(struct kore_pcm_ring *q,float *stereo,size_t f
 #define KORE_BOX 4u
 #define KORE_DEVICE 2u
 #define KORE_STREAM 3u
-#define KORE_PULL 'kpcm'
+#define KORE_PULL 'kpc4'
 #define KORE_LEASE 'kown'
 #define KORE_UID CFSTR("org.nikore.experimental.output")
-static struct kore_pcm_ring pcm;
+static struct kore_pcm_ring pcm={.channels=4};
 static pthread_mutex_t control=PTHREAD_MUTEX_INITIALIZER;
 static _Atomic unsigned running,refs=1;
 static _Atomic uint64_t anchor,clockSeed=1;
@@ -71,7 +73,7 @@ static AudioServerPlugInDriverRef driverRef=&driverPtr;
 static AudioStreamBasicDescription format(void) {
     return (AudioStreamBasicDescription){.mSampleRate=48000,.mFormatID=kAudioFormatLinearPCM,
         .mFormatFlags=kAudioFormatFlagIsFloat|kAudioFormatFlagIsPacked|kAudioFormatFlagsNativeEndian,
-        .mBytesPerPacket=8,.mFramesPerPacket=1,.mBytesPerFrame=8,.mChannelsPerFrame=2,.mBitsPerChannel=32};
+        .mBytesPerPacket=16,.mFramesPerPacket=1,.mBytesPerFrame=16,.mChannelsPerFrame=4,.mBitsPerChannel=32};
 }
 static HRESULT query(void *d,REFIID uuid,LPVOID *out) {
     if(d!=driverRef || !out)return E_NOINTERFACE;
@@ -89,6 +91,7 @@ static OSStatus config(AudioServerPlugInDriverRef d,AudioObjectID id,UInt64 acti
 static Boolean valid_object(AudioObjectID id){return id==kAudioObjectPlugInObject || id==KORE_DEVICE || id==KORE_STREAM || id==KORE_BOX;}
 static Boolean has(AudioServerPlugInDriverRef d,AudioObjectID id,pid_t pid,const AudioObjectPropertyAddress *a) {
     (void)pid;if(d!=driverRef || !a || !valid_object(id))return false;
+    if(a->mSelector==kAudioObjectPropertyElementName)return id==KORE_DEVICE && a->mScope==kAudioObjectPropertyScopeOutput && a->mElement>=1 && a->mElement<=4;
     switch(a->mSelector) {
         case kAudioObjectPropertyBaseClass:case kAudioObjectPropertyClass:case kAudioObjectPropertyOwner:
         case kAudioObjectPropertyModelName:case kAudioObjectPropertyName:case kAudioObjectPropertyManufacturer:case kAudioObjectPropertyOwnedObjects:return true;
@@ -125,7 +128,7 @@ static OSStatus settable(AudioServerPlugInDriverRef d,AudioObjectID id,pid_t pid
 }
 static UInt32 property_size(AudioObjectID id,const AudioObjectPropertyAddress *a) {
     switch(a->mSelector) {
-        case kAudioPlugInPropertyResourceBundle:case kAudioObjectPropertyModelName:case kAudioObjectPropertyName:case kAudioObjectPropertyManufacturer:case kAudioPlugInPropertyBundleID:
+        case kAudioObjectPropertyElementName:case kAudioPlugInPropertyResourceBundle:case kAudioObjectPropertyModelName:case kAudioObjectPropertyName:case kAudioObjectPropertyManufacturer:case kAudioPlugInPropertyBundleID:
         case kAudioDevicePropertyDeviceUID:case kAudioDevicePropertyModelUID:case kAudioBoxPropertyBoxUID:case KORE_PULL:case KORE_LEASE:return sizeof(CFTypeRef);
         case kAudioObjectPropertyOwnedObjects:return id==kAudioObjectPlugInObject?2*sizeof(AudioObjectID):id==KORE_BOX || id==KORE_STREAM || (id==KORE_DEVICE && a->mScope==kAudioObjectPropertyScopeInput)?0:sizeof(AudioObjectID);
         case kAudioBoxPropertyClockDeviceList:return 0;
@@ -152,6 +155,10 @@ static OSStatus get(AudioServerPlugInDriverRef d,AudioObjectID id,pid_t pid,cons
         case kAudioObjectPropertyBaseClass:value=kAudioObjectClassID;break;
         case kAudioObjectPropertyClass:value=id==kAudioObjectPlugInObject?kAudioPlugInClassID:id==KORE_DEVICE?kAudioDeviceClassID:id==KORE_BOX?kAudioBoxClassID:kAudioStreamClassID;break;
         case kAudioObjectPropertyOwner:value=id==kAudioObjectPlugInObject?kAudioObjectUnknown:(id==KORE_DEVICE || id==KORE_BOX)?kAudioObjectPlugInObject:KORE_DEVICE;break;
+        case kAudioObjectPropertyElementName: {
+            CFStringRef names[]={CFSTR("Main Left"),CFSTR("Main Right"),CFSTR("Headphones Left"),CFSTR("Headphones Right")};
+            string=names[a->mElement-1];break;
+        }
         case kAudioObjectPropertyModelName:string=CFSTR("KORE 1 Native Output");break;
         case kAudioObjectPropertyName:string=id==KORE_DEVICE?CFSTR("KORE 1 Experimental Output"):CFSTR("KORE 1 Native Bridge");break;
         case kAudioObjectPropertyManufacturer:string=CFSTR("NI-KORE open-source project");break;
@@ -200,8 +207,8 @@ static OSStatus get(AudioServerPlugInDriverRef d,AudioObjectID id,pid_t pid,cons
         case KORE_PULL: {
             pthread_mutex_lock(&control);
             if(!consumer || consumer!=pid){pthread_mutex_unlock(&control);return kAudioHardwareIllegalOperationError;}
-            float block[512*2];size_t frames=kore_pcm_pop(&pcm,block,512);
-            *(CFDataRef *)data=CFDataCreate(NULL,(const UInt8 *)block,(CFIndex)(frames*8));
+            float block[512*4];size_t frames=kore_pcm_pop(&pcm,block,512);
+            *(CFDataRef *)data=CFDataCreate(NULL,(const UInt8 *)block,(CFIndex)(frames*16));
             pthread_mutex_unlock(&control);return *(CFDataRef *)data?0:kAudioHardwareUnspecifiedError;
         }
         default:break; /* zero latency/safety offset/clock domain */
@@ -425,19 +432,21 @@ static inline unsigned char caiaq_tone_byte(void *ctx,unsigned stream) {
 _Static_assert(ATOMIC_LLONG_LOCK_FREE==2,"Realtime PCM queue requires lock-free 64-bit atomics");
 struct kore_pcm_ring {
     _Atomic uint64_t written,read,overruns,underruns;
-    float samples[KORE_PCM_CAPACITY][2];
+    unsigned channels; /* zero retains stereo for diagnostic callers; immutable while running */
+    float samples[KORE_PCM_CAPACITY][4];
 };
+static inline unsigned kore_pcm_channels(const struct kore_pcm_ring *q) {return q->channels==4?4:2;}
 static inline size_t kore_pcm_push(struct kore_pcm_ring *q,const float *stereo,size_t frames) {
     uint64_t w=atomic_load_explicit(&q->written,memory_order_relaxed),r=atomic_load_explicit(&q->read,memory_order_acquire);
     if(w-r>KORE_PCM_CAPACITY || frames>KORE_PCM_CAPACITY-(w-r)) {atomic_fetch_add(&q->overruns,1);return 0;}
-    for(size_t i=0;i<frames;i++)for(unsigned ch=0;ch<2;ch++)q->samples[(w+i)%KORE_PCM_CAPACITY][ch]=stereo[i*2+ch];
+    for(size_t i=0;i<frames;i++)for(unsigned ch=0;ch<kore_pcm_channels(q);ch++)q->samples[(w+i)%KORE_PCM_CAPACITY][ch]=stereo[i*kore_pcm_channels(q)+ch];
     atomic_store_explicit(&q->written,w+frames,memory_order_release);return frames;
 }
 static inline size_t kore_pcm_pop(struct kore_pcm_ring *q,float *stereo,size_t frames) {
     uint64_t r=atomic_load_explicit(&q->read,memory_order_relaxed),w=atomic_load_explicit(&q->written,memory_order_acquire);
     size_t count=w-r<frames?(size_t)(w-r):frames;
     if(w-r>KORE_PCM_CAPACITY)return 0;
-    for(size_t i=0;i<count;i++)for(unsigned ch=0;ch<2;ch++)stereo[i*2+ch]=q->samples[(r+i)%KORE_PCM_CAPACITY][ch];
+    for(size_t i=0;i<count;i++)for(unsigned ch=0;ch<kore_pcm_channels(q);ch++)stereo[i*kore_pcm_channels(q)+ch]=q->samples[(r+i)%KORE_PCM_CAPACITY][ch];
     atomic_store_explicit(&q->read,r+count,memory_order_release);
     if(count<frames)atomic_fetch_add(&q->underruns,frames-count);
     return count;
@@ -461,7 +470,7 @@ struct kore_rate_match {
     double calibration_sum;
     bool primed;
     double phase,ratio,integral,filtered_error,fade;
-    float left[2],right[2],last[2];
+    float left[4],right[4],last[4];
     uint64_t input_frames,output_frames,priming_frames,starvations;
 };
 static inline void kore_rate_match_init(struct kore_rate_match *s,unsigned target) {
@@ -476,17 +485,17 @@ static inline float kore_finite_sample(float value) {
     if(!isfinite(value))return 0;
     return value>1?1:value< -1?-1:value;
 }
-static inline bool kore_rate_match_frame(struct kore_rate_match *s,struct kore_pcm_ring *q,float out[2]) {
+static inline bool kore_rate_match_frame(struct kore_rate_match *s,struct kore_pcm_ring *q,float *out) {
     s->output_frames++;
     if(!s->primed) {
         if(s->prime_target && s->prime_target<KORE_PCM_CAPACITY-2 && kore_pcm_available(q)>=s->prime_target+2) {
-            float pair[4];if(kore_pcm_pop(q,pair,2)!=2)return false;
-            for(unsigned ch=0;ch<2;ch++){s->left[ch]=kore_finite_sample(pair[ch]);s->right[ch]=kore_finite_sample(pair[ch+2]);}
+            float pair[8];if(kore_pcm_pop(q,pair,2)!=2)return false;
+            for(unsigned ch=0;ch<kore_pcm_channels(q);ch++){s->left[ch]=kore_finite_sample(pair[ch]);s->right[ch]=kore_finite_sample(pair[ch+kore_pcm_channels(q)]);}
             s->input_frames+=2;s->phase=0;s->fade=0;s->filtered_error=0;s->primed=true;
             s->control_frames=s->warmup_frames=s->calibration_samples=0;s->calibration_sum=0;s->integral=0;s->ratio=1;
         } else {
             s->priming_frames++;s->fade=fmax(0,s->fade-1./240);
-            for(unsigned ch=0;ch<2;ch++)out[ch]=(float)(s->last[ch]*s->fade);
+            for(unsigned ch=0;ch<kore_pcm_channels(q);ch++)out[ch]=(float)(s->last[ch]*s->fade);
             return false;
         }
     }
@@ -511,15 +520,15 @@ static inline bool kore_rate_match_frame(struct kore_rate_match *s,struct kore_p
         }
     }
     s->fade=fmin(1,s->fade+1./240);
-    for(unsigned ch=0;ch<2;ch++) {
+    for(unsigned ch=0;ch<kore_pcm_channels(q);ch++) {
         float value=(float)(s->left[ch]+(s->right[ch]-s->left[ch])*s->phase);
         s->last[ch]=value;out[ch]=(float)(value*s->fade);
     }
     s->phase+=s->ratio;
     while(s->phase>=1) {
-        float next[2];
+        float next[4];
         if(kore_pcm_pop(q,next,1)!=1){s->starvations++;s->primed=false;break;}
-        for(unsigned ch=0;ch<2;ch++){s->left[ch]=s->right[ch];s->right[ch]=kore_finite_sample(next[ch]);}
+        for(unsigned ch=0;ch<kore_pcm_channels(q);ch++){s->left[ch]=s->right[ch];s->right[ch]=kore_finite_sample(next[ch]);}
         s->input_frames++;s->phase-=1;
     }
     return true;
@@ -532,21 +541,31 @@ static inline bool kore_rate_match_frame(struct kore_rate_match *s,struct kore_p
 struct kore_pcm_source {
     struct kore_pcm_ring *queue;
     uint64_t position[2],consumed;
-    double amplitude;
+    double amplitude,headphoneAmplitude;
+    bool separate_gains;
     bool rate_match;struct kore_rate_match matcher;
-    unsigned char bytes[6];
+    unsigned char bytes[12];
 };
+/* Playback gain is independent of the diagnostic oscillator's -60 dB cap.
+ * Clamp before conversion; non-finite input/gain produces silence. */
+#define KORE_PCM_MAX_GAIN 1.0
+static inline int32_t kore_pcm_sample(double value,double gain) {
+    if(!isfinite(value) || !isfinite(gain) || gain<0 || gain>KORE_PCM_MAX_GAIN)return 0;
+    if(value>1)value=1;
+    if(value< -1)value= -1;
+    return (int32_t)(value*gain*8388607.0);
+}
 static inline unsigned char kore_pcm_byte(void *context,unsigned stream) {
     struct kore_pcm_source *s=context;unsigned pos=(unsigned)(s->position[stream]++%6);
-    if(stream!=1)return 0; /* verified headphone path: logical outputs 3/4 */
-    if(pos==0) {
-        float values[2]={0,0};
+    if(kore_pcm_channels(s->queue)==2 && stream!=1)return 0; /* verified headphone path: logical outputs 3/4 */
+    if(pos==0 && (kore_pcm_channels(s->queue)==2 || stream==0)) {
+        float values[4]={0,0,0,0};
         if(s->rate_match) {
             kore_rate_match_frame(&s->matcher,s->queue,values);s->consumed=s->matcher.input_frames;
         } else {size_t count=kore_pcm_pop(s->queue,values,1);s->consumed+=count;}
-        for(unsigned ch=0;ch<2;ch++)caiaq_s24be(s->bytes+ch*3,caiaq_safe_sample(values[ch]*s->amplitude,s->amplitude));
+        for(unsigned ch=0;ch<kore_pcm_channels(s->queue);ch++)caiaq_s24be(s->bytes+ch*3,kore_pcm_sample(values[ch],s->separate_gains && ch>=2?s->headphoneAmplitude:s->amplitude));
     }
-    return s->bytes[pos];
+    return s->bytes[pos+(kore_pcm_channels(s->queue)==4?stream*6:0)];
 }
 #endif
 
@@ -587,15 +606,16 @@ static inline OSStatus kore_coreaudio_lease(AudioDeviceID device,BOOL own) {
 static inline OSStatus kore_coreaudio_pull(AudioDeviceID device,struct kore_pcm_ring *queue) {
     uint64_t w=atomic_load_explicit(&queue->written,memory_order_acquire),r=atomic_load_explicit(&queue->read,memory_order_acquire);
     if(w-r>2048)return 0;
-    AudioObjectPropertyAddress a={'kpcm',kAudioObjectPropertyScopeGlobal,kAudioObjectPropertyElementMain};
+    AudioObjectPropertyAddress a={'kpc4',kAudioObjectPropertyScopeGlobal,kAudioObjectPropertyElementMain};
     CFDataRef data=NULL;UInt32 size=sizeof(data);
     OSStatus status=AudioObjectGetPropertyData(device,&a,0,NULL,&size,&data);
     if(status)return status;
-    if(!data || CFGetTypeID(data)!=CFDataGetTypeID() || CFDataGetLength(data)%8 || CFDataGetLength(data)>4096) {
+    if(!data || CFGetTypeID(data)!=CFDataGetTypeID() || CFDataGetLength(data)%16 || CFDataGetLength(data)>8192) {
         if(data)CFRelease(data);return kAudioHardwareBadPropertySizeError;
     }
-    float aligned[1024];memcpy(aligned,CFDataGetBytePtr(data),(size_t)CFDataGetLength(data));
-    kore_pcm_push(queue,aligned,(size_t)CFDataGetLength(data)/8);CFRelease(data);return 0;
+    if(kore_pcm_channels(queue)!=4){CFRelease(data);return kAudioHardwareBadPropertySizeError;}
+    float aligned[2048];memcpy(aligned,CFDataGetBytePtr(data),(size_t)CFDataGetLength(data));
+    kore_pcm_push(queue,aligned,(size_t)CFDataGetLength(data)/16);CFRelease(data);return 0;
 }
 
 
@@ -1308,7 +1328,7 @@ static uint64_t native_now_ns(void) {
     dispatch_queue_t pcmDispatch;
     dispatch_source_t pcmTimer;
     _Atomic int pcmError;
-    unsigned toneChannel;double toneAmplitude;struct caiaq_tone tone;
+    unsigned toneChannel;double toneAmplitude,pcmAmplitude,pcmHeadphoneAmplitude;struct caiaq_tone tone;
     NSMutableArray<KoreNativeSlot *> *streamIns,*streamOuts;
     dispatch_source_t streamTimer;
     uint64_t streamStart,streamDeadline,nextInFrame,nextOutFrame;
@@ -1333,7 +1353,7 @@ static uint64_t native_now_ns(void) {
 - (instancetype)init {
     if((self=[super init])) {
         queue=dispatch_queue_create("kore.native.usb",DISPATCH_QUEUE_SERIAL);
-        inSlotCount=32;outSlotCount=64;outLeadFrames=32;
+        inSlotCount=32;outSlotCount=64;outLeadFrames=32;pcmAmplitude=pcmHeadphoneAmplitude=.00025;
         done=dispatch_semaphore_create(0);bulkData=[NSMutableData dataWithLength:512];
         controllerQueue=dispatch_queue_create("kore.native.controller",DISPATCH_QUEUE_SERIAL);
         midiQueue=dispatch_queue_create("kore.native.midi",DISPATCH_QUEUE_SERIAL);
@@ -1601,7 +1621,8 @@ static uint64_t native_now_ns(void) {
     if(!now) {[self finishFailure:"stream frame clock" error:nil];return;}
     if(toneChannel && caiaq_tone_init(&tone,toneChannel,toneAmplitude)) {[self finishFailure:"tone configuration" error:nil];return;}
     if(pcmMode) {
-        pcmSource=(struct kore_pcm_source){.queue=&pcmQueue,.position={4,4},.amplitude=0.00025,.rate_match=true};
+        pcmQueue.channels=pcmTest?2:4;
+        pcmSource=(struct kore_pcm_source){.queue=&pcmQueue,.position={4,4},.amplitude=pcmAmplitude,.headphoneAmplitude=pcmHeadphoneAmplitude,.separate_gains=!pcmTest,.rate_match=true};
         kore_rate_match_init(&pcmSource.matcher,2048);
         if(pcmTest) {
             float prefill[2050*2]={0};kore_pcm_push(&pcmQueue,prefill,2050);pcmProduced=2050;pcmHostStart=native_now_ns();
@@ -1642,7 +1663,8 @@ static uint64_t native_now_ns(void) {
     });
     dispatch_resume(streamTimer);
     }
-    printf("NATIVE STREAM %s: %u IN / %u OUT slots, OUT lead=%ums, 8 microframes each, explicit contiguous frame numbers\n",toneChannel?"OPT-IN SINGLE-CHANNEL TONE":pcmMode?"EXPLICIT PCM (capped .00025)":"silence",inSlotCount,outSlotCount,outLeadFrames);
+    printf("NATIVE STREAM %s: %u IN / %u OUT slots, OUT lead=%ums, 8 microframes each, explicit contiguous frame numbers\n",toneChannel?"OPT-IN SINGLE-CHANNEL TONE":pcmMode?"EXPLICIT PCM (bounded gain)":"silence",inSlotCount,outSlotCount,outLeadFrames);
+    if(pcmMode)printf("NATIVE PCM main_gain=%.8f headphone_gain=%.8f playback ceiling=1\n",pcmAmplitude,pcmHeadphoneAmplitude);
     for(KoreNativeSlot *slot in streamIns) {if(failed || stopping)break;[self submitStreamIn:slot];}
 }
 - (BOOL)waitForStream {
@@ -1843,7 +1865,7 @@ int main(int argc,const char **argv) {
  */
 /* BEGIN audio/system_resources.h */
 /* GENERATED by automation/generate_system_header.py. */
-#define KORE_INFO_PLIST "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\"><dict>\n<key>CFBundleExecutable</key><string>KoreAudio</string>\n<key>CFBundleIdentifier</key><string>org.nikore.experimental.driver</string>\n<key>CFBundleName</key><string>KORE 1 Experimental Output</string>\n<key>CFBundlePackageType</key><string>BNDL</string>\n<key>CFBundleVersion</key><string>0.1.0</string>\n<key>CFPlugInDynamicRegistration</key><false/>\n<key>CFPlugInFactories</key><dict><key>BE5B901E-822E-47D8-98B5-6BDDD04914F3</key><string>KoreAudioFactory</string></dict>\n<key>CFPlugInTypes</key><dict><key>443ABAB8-E7B3-491A-B985-BEB9187030DB</key><array><string>BE5B901E-822E-47D8-98B5-6BDDD04914F3</string></array></dict>\n</dict></plist>\n"
+#define KORE_INFO_PLIST "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\"><dict>\n<key>CFBundleExecutable</key><string>KoreAudio</string>\n<key>CFBundleIdentifier</key><string>org.nikore.experimental.driver</string>\n<key>CFBundleName</key><string>KORE 1 Experimental Output</string>\n<key>CFBundlePackageType</key><string>BNDL</string>\n<key>CFBundleVersion</key><string>0.2.0</string>\n<key>CFPlugInDynamicRegistration</key><false/>\n<key>CFPlugInFactories</key><dict><key>BE5B901E-822E-47D8-98B5-6BDDD04914F3</key><string>KoreAudioFactory</string></dict>\n<key>CFPlugInTypes</key><dict><key>443ABAB8-E7B3-491A-B985-BEB9187030DB</key><array><string>BE5B901E-822E-47D8-98B5-6BDDD04914F3</string></array></dict>\n</dict></plist>\n"
 #define KORE_INSTALL_SCRIPT "#!/bin/sh\n# Executed with administrator authorization by the final bridge.\n# Source paths arrive as positional arguments; no shell eval is used.\nset -eu\nmode=$1\nsource_dir=$2\nhal=/Library/Audio/Plug-Ins/HAL\nsupport='/Library/Application Support/KORE1'\nbundle=\"$hal/KoreAudio.driver\"\nif [ \"$mode\" = install ]; then\n    test -f \"$source_dir/KoreAudio.driver/Contents/MacOS/KoreAudio\"\n    test -x \"$source_dir/kore1-final-bridge\"\n    /usr/bin/codesign --verify --deep --strict \"$source_dir/KoreAudio.driver\"\n    test \"$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' \"$source_dir/KoreAudio.driver/Contents/Info.plist\")\" = org.nikore.experimental.driver\n    /bin/mkdir -p \"$hal\" \"$support/Backups\"\n    stamp=$(/bin/date +%Y%m%d-%H%M%S)-$$\n    stage=\"$hal/.KoreAudio-stage-$stamp.driver\"\n    /usr/bin/ditto \"$source_dir/KoreAudio.driver\" \"$stage\"\n    /usr/sbin/chown -R root:wheel \"$stage\"\n    /bin/chmod -R go-w \"$stage\"\n    /usr/bin/codesign --verify --deep --strict \"$stage\"\n    if [ -e \"$bundle\" ]; then /bin/mv \"$bundle\" \"$support/Backups/KoreAudio-$stamp.driver\"; fi\n    /bin/mv \"$stage\" \"$bundle\"\n    if [ -e \"$support/kore1-final-bridge\" ]; then /bin/cp -p \"$support/kore1-final-bridge\" \"$support/Backups/bridge-$stamp\"; fi\n    /usr/bin/install -o root -g wheel -m 755 \"$source_dir/kore1-final-bridge\" \"$support/kore1-final-bridge\"\n    /usr/bin/ditto \"$source_dir/KoreAudio.driver\" \"$support/KoreAudio.driver\"\n    /usr/sbin/chown -R root:wheel \"$support\"\n    /bin/chmod -R go-w \"$support\"\nelif [ \"$mode\" = uninstall ]; then\n    # Preserve the installed bundle and binary as a reversible backup.\n    if [ -e \"$bundle\" ]; then\n        /bin/mkdir -p \"$support/Backups\"\n        /bin/mv \"$bundle\" \"$support/Backups/removed-$(/bin/date +%Y%m%d-%H%M%S)-$$.driver\"\n    fi\nelse\n    exit 2\nfi\n# launchd restarts the system audio service. Audio defaults are never changed.\n/usr/bin/killall coreaudiod || true\n"
 
 
@@ -1865,7 +1887,11 @@ static int kore_system_status(void) {
     if(!device)return 1;
     AudioObjectPropertyAddress a={kAudioDevicePropertyNominalSampleRate,kAudioObjectPropertyScopeGlobal,kAudioObjectPropertyElementMain};
     Float64 rate=0;UInt32 size=sizeof(rate);OSStatus status=AudioObjectGetPropertyData(device,&a,0,NULL,&size,&rate);
-    printf("KORE nominal_rate=%.0f query_status=%d\n",rate,status);return status || rate!=48000?1:0;
+    printf("KORE nominal_rate=%.0f query_status=%d\n",rate,status);
+    AudioStreamBasicDescription format={0};size=sizeof(format);a.mSelector=kAudioDevicePropertyStreamFormat;a.mScope=kAudioObjectPropertyScopeOutput;
+    OSStatus formatStatus=AudioObjectGetPropertyData(device,&a,0,NULL,&size,&format);
+    printf("KORE output_channels=%u bytes_per_frame=%u format_status=%d\n",format.mChannelsPerFrame,format.mBytesPerFrame,formatStatus);
+    return status || rate!=48000 || formatStatus || format.mChannelsPerFrame!=4?1:0;
 }
 static int kore_system_install(BOOL remove) {
     NSString *directory=kore_executable_directory();if(!directory)return 1;
@@ -1893,6 +1919,23 @@ static int kore_system_install(BOOL remove) {
     int rc=kore_task(@"/usr/bin/osascript",@[@"-e",script,@"--",installer,remove?@"uninstall":@"install",staging]);
     [fm removeItemAtPath:staging error:NULL];return rc;
 }
+/* bootout may return before launchd has removed the service registration.
+ * Wait for disappearance before bootstrap to avoid transient EIO/SIGTERMed races. */
+static int kore_launchctl_quiet(NSArray<NSString *> *arguments) {
+    NSTask *task=[NSTask new];task.executableURL=[NSURL fileURLWithPath:@"/bin/launchctl"];task.arguments=arguments;
+    task.standardOutput=[NSFileHandle fileHandleWithNullDevice];task.standardError=[NSFileHandle fileHandleWithNullDevice];
+    NSError *error=nil;if(![task launchAndReturnError:&error])return -1;
+    [task waitUntilExit];return task.terminationStatus;
+}
+static int kore_login_stop(NSString *service) {
+    if(kore_launchctl_quiet(@[@"print",service])!=0)return 0;
+    (void)kore_launchctl_quiet(@[@"bootout",service]);
+    for(unsigned retry=0;retry<50;retry++) {
+        if(kore_launchctl_quiet(@[@"print",service])!=0)return 0;
+        usleep(100000);
+    }
+    fprintf(stderr,"Login bridge is still stopping; bootstrap was not attempted\n");return 1;
+}
 static int kore_login_install(BOOL remove) {
     NSString *label=@"org.nikore.bridge";
     NSString *directory=[NSHomeDirectory() stringByAppendingPathComponent:@"Library/LaunchAgents"];
@@ -1900,8 +1943,8 @@ static int kore_login_install(BOOL remove) {
     NSString *domain=[NSString stringWithFormat:@"gui/%u",getuid()];
     NSString *service=[domain stringByAppendingFormat:@"/%@",label];
     if(remove) {
+        if(kore_login_stop(service))return 1;
         if([[NSFileManager defaultManager] fileExistsAtPath:path]) {
-            (void)kore_task(@"/bin/launchctl",@[@"bootout",service]);
             NSError *error=nil;if(![[NSFileManager defaultManager] removeItemAtPath:path error:&error]){report_error("remove login agent",error);return 1;}
         }
         return 0;
@@ -1910,20 +1953,20 @@ static int kore_login_install(BOOL remove) {
     if(![[NSFileManager defaultManager] isExecutableFileAtPath:binary])return 1;
     NSError *error=nil;
     if(![[NSFileManager defaultManager] createDirectoryAtPath:directory withIntermediateDirectories:YES attributes:nil error:&error]){report_error("login directory",error);return 1;}
-    NSDictionary *agent=@{@"Label":label,@"ProgramArguments":@[binary,@"--run",@"--coreaudio-pcm",@"--continuous",@"--mixxx-feedback"],
+    NSDictionary *agent=@{@"Label":label,@"ProgramArguments":@[binary,@"--run",@"--coreaudio-pcm",@"--continuous",@"--mixxx-feedback",@"--main-gain",@"0.2",@"--headphone-gain",@"1"],
         @"RunAtLoad":@YES,@"KeepAlive":@YES,@"ThrottleInterval":@10,@"ProcessType":@"Interactive",
         @"StandardOutPath":[NSHomeDirectory() stringByAppendingPathComponent:@"Library/Logs/KORE1-bridge.log"],
         @"StandardErrorPath":[NSHomeDirectory() stringByAppendingPathComponent:@"Library/Logs/KORE1-bridge-error.log"]};
     NSData *data=[NSPropertyListSerialization dataWithPropertyList:agent format:NSPropertyListXMLFormat_v1_0 options:0 error:&error];
     if(!data || ![data writeToFile:path options:NSDataWritingAtomic error:&error]){report_error("write login agent",error);return 1;}
-    (void)kore_task(@"/bin/launchctl",@[@"bootout",service]);
+    if(kore_login_stop(service))return 1;
     return kore_task(@"/bin/launchctl",@[@"bootstrap",domain,path]);
 }
 
 
 static void bridge_usage(const char *name) {
-    printf("Usage: %s [--run|--dry-run] [--midi-only|--coreaudio-pcm|--stream-silence|--stream-tone 1..4] [--mixxx-feedback|--no-midi] [--duration-ms 100..3000|--continuous]\n",name);
-    puts("Default: dry run, MIDI + silence. PCM is capped to .00025 peak on logical outputs 3/4.");
+    printf("Usage: %s [--run|--dry-run] [--midi-only|--coreaudio-pcm|--stream-silence|--stream-tone 1..4] [--mixxx-feedback|--no-midi] [--pcm-gain 0..1] [--main-gain 0..1] [--headphone-gain 0..1] [--duration-ms 100..3000|--continuous]\n",name);
+    puts("Default: dry run, MIDI + silence. Default PCM gain is .00025; explicit playback ceiling 1 on logical outputs 3/4.");
     puts("--continuous explicitly enables ongoing silence/CoreAudio operation; Ctrl+C stops.");
     puts("--system-status | --install-system | --uninstall-system | --install-login | --uninstall-login | --emit-driver-plist");
 }
@@ -1936,7 +1979,7 @@ int main(int argc,const char **argv) {@autoreleasepool {
         if(!strcmp(argv[1],"--uninstall-login"))return kore_login_install(YES);
         if(!strcmp(argv[1],"--emit-driver-plist")){fputs(KORE_INFO_PLIST,stdout);return 0;}
     }
-    BOOL run=NO,midi=YES,feedback=NO,pcm=NO,midiOnly=NO,continuous=NO,modeSet=NO,durationSet=NO;
+    BOOL run=NO,midi=YES,feedback=NO,pcm=NO,midiOnly=NO,continuous=NO,modeSet=NO,durationSet=NO,gainSet=NO,mainGainSet=NO,headphoneGainSet=NO;double pcmGain=.00025,mainGain=.00025,headphoneGain=.00025;
     unsigned duration=3000,toneChannel=0;
     for(int i=1;i<argc;i++) {
         if(!strcmp(argv[i],"--help")){bridge_usage(argv[0]);return 0;}
@@ -1944,6 +1987,13 @@ int main(int argc,const char **argv) {@autoreleasepool {
         else if(!strcmp(argv[i],"--dry-run"))run=NO;
         else if(!strcmp(argv[i],"--mixxx-feedback")){midi=YES;feedback=YES;}
         else if(!strcmp(argv[i],"--no-midi")){midi=NO;feedback=NO;}
+        else if((!strcmp(argv[i],"--pcm-gain") || !strcmp(argv[i],"--main-gain") || !strcmp(argv[i],"--headphone-gain")) && i+1<argc) {
+            const char *option=argv[i];char *end;double value=strtod(argv[++i],&end);gainSet=YES;
+            if(!*argv[i] || *end || !isfinite(value) || value<0 || value>KORE_PCM_MAX_GAIN)return 2;
+            if(!strcmp(option,"--main-gain")){mainGain=value;mainGainSet=YES;}
+            else if(!strcmp(option,"--headphone-gain")){headphoneGain=value;headphoneGainSet=YES;}
+            else pcmGain=value;
+        }
         else if(!strcmp(argv[i],"--continuous"))continuous=YES;
         else if(!strcmp(argv[i],"--midi-only")){if(modeSet)return 2;modeSet=midiOnly=YES;}
         else if(!strcmp(argv[i],"--coreaudio-pcm")){if(modeSet)return 2;modeSet=pcm=YES;}
@@ -1956,15 +2006,18 @@ int main(int argc,const char **argv) {@autoreleasepool {
             if(!*argv[i] || *end || n<100 || n>3000)return 2;duration=(unsigned)n;durationSet=YES;
         } else {bridge_usage(argv[0]);return 2;}
     }
-    if((continuous && durationSet) || (midiOnly && !midi) || (toneChannel && (continuous || duration!=3000)))return 2;
+    if((gainSet && !pcm) || (continuous && durationSet) || (midiOnly && !midi) || (toneChannel && (continuous || duration!=3000)))return 2;
+    if(!mainGainSet)mainGain=pcmGain;
+    if(!headphoneGainSet)headphoneGain=pcmGain;
     setvbuf(stdout,NULL,_IOLBF,0);
     printf("BRIDGE CONFIG hardware=%s MIDI=%d feedback=%d audio=%s continuous=%d duration_ms=%u\n",run?"ENABLED":"disabled",midi,feedback,midiOnly?"off":pcm?"CoreAudio PCM":toneChannel?"capped tone":"silence",continuous,duration);
+    if(pcm)printf("BRIDGE PCM main_gain=%.8f headphone_gain=%.8f (ceiling=1), Main 1/2 + Headphones 3/4\n",mainGain,headphoneGain);
     if(!run)return 0;
     interrupted=0;signal(SIGINT,on_signal);signal(SIGTERM,on_signal);
     KoreNativeProbe *probe=[KoreNativeProbe new];
     probe->profile=caiaq_probe_id("observed");probe->zeroAtStart=1;probe->guardBytes=1;
     probe->streamMode=!midiOnly;probe->streamDurationMs=duration;probe->continuous=continuous;
-    probe->toneChannel=toneChannel;probe->toneAmplitude=.00025;probe->pcmMode=pcm;probe->feedbackMode=feedback;
+    probe->toneChannel=toneChannel;probe->toneAmplitude=.00025;probe->pcmMode=pcm;probe->pcmAmplitude=mainGain;probe->pcmHeadphoneAmplitude=headphoneGain;probe->feedbackMode=feedback;
     int rc=1;
     if(pcm) {
         probe->pcmDevice=kore_coreaudio_find();

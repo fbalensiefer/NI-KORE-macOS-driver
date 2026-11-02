@@ -58,7 +58,7 @@ static uint64_t native_now_ns(void) {
     dispatch_queue_t pcmDispatch;
     dispatch_source_t pcmTimer;
     _Atomic int pcmError;
-    unsigned toneChannel;double toneAmplitude;struct caiaq_tone tone;
+    unsigned toneChannel;double toneAmplitude,pcmAmplitude,pcmHeadphoneAmplitude;struct caiaq_tone tone;
     NSMutableArray<KoreNativeSlot *> *streamIns,*streamOuts;
     dispatch_source_t streamTimer;
     uint64_t streamStart,streamDeadline,nextInFrame,nextOutFrame;
@@ -83,7 +83,7 @@ static uint64_t native_now_ns(void) {
 - (instancetype)init {
     if((self=[super init])) {
         queue=dispatch_queue_create("kore.native.usb",DISPATCH_QUEUE_SERIAL);
-        inSlotCount=32;outSlotCount=64;outLeadFrames=32;
+        inSlotCount=32;outSlotCount=64;outLeadFrames=32;pcmAmplitude=pcmHeadphoneAmplitude=.00025;
         done=dispatch_semaphore_create(0);bulkData=[NSMutableData dataWithLength:512];
         controllerQueue=dispatch_queue_create("kore.native.controller",DISPATCH_QUEUE_SERIAL);
         midiQueue=dispatch_queue_create("kore.native.midi",DISPATCH_QUEUE_SERIAL);
@@ -351,7 +351,8 @@ static uint64_t native_now_ns(void) {
     if(!now) {[self finishFailure:"stream frame clock" error:nil];return;}
     if(toneChannel && caiaq_tone_init(&tone,toneChannel,toneAmplitude)) {[self finishFailure:"tone configuration" error:nil];return;}
     if(pcmMode) {
-        pcmSource=(struct kore_pcm_source){.queue=&pcmQueue,.position={4,4},.amplitude=0.00025,.rate_match=true};
+        pcmQueue.channels=pcmTest?2:4;
+        pcmSource=(struct kore_pcm_source){.queue=&pcmQueue,.position={4,4},.amplitude=pcmAmplitude,.headphoneAmplitude=pcmHeadphoneAmplitude,.separate_gains=!pcmTest,.rate_match=true};
         kore_rate_match_init(&pcmSource.matcher,2048);
         if(pcmTest) {
             float prefill[2050*2]={0};kore_pcm_push(&pcmQueue,prefill,2050);pcmProduced=2050;pcmHostStart=native_now_ns();
@@ -392,7 +393,8 @@ static uint64_t native_now_ns(void) {
     });
     dispatch_resume(streamTimer);
     }
-    printf("NATIVE STREAM %s: %u IN / %u OUT slots, OUT lead=%ums, 8 microframes each, explicit contiguous frame numbers\n",toneChannel?"OPT-IN SINGLE-CHANNEL TONE":pcmMode?"EXPLICIT PCM (capped .00025)":"silence",inSlotCount,outSlotCount,outLeadFrames);
+    printf("NATIVE STREAM %s: %u IN / %u OUT slots, OUT lead=%ums, 8 microframes each, explicit contiguous frame numbers\n",toneChannel?"OPT-IN SINGLE-CHANNEL TONE":pcmMode?"EXPLICIT PCM (bounded gain)":"silence",inSlotCount,outSlotCount,outLeadFrames);
+    if(pcmMode)printf("NATIVE PCM main_gain=%.8f headphone_gain=%.8f playback ceiling=1\n",pcmAmplitude,pcmHeadphoneAmplitude);
     for(KoreNativeSlot *slot in streamIns) {if(failed || stopping)break;[self submitStreamIn:slot];}
 }
 - (BOOL)waitForStream {

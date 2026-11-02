@@ -5,8 +5,8 @@
 #include "native_probe.m"
 #include "system_install.h"
 static void bridge_usage(const char *name) {
-    printf("Usage: %s [--run|--dry-run] [--midi-only|--coreaudio-pcm|--stream-silence|--stream-tone 1..4] [--mixxx-feedback|--no-midi] [--duration-ms 100..3000|--continuous]\n",name);
-    puts("Default: dry run, MIDI + silence. PCM is capped to .00025 peak on logical outputs 3/4.");
+    printf("Usage: %s [--run|--dry-run] [--midi-only|--coreaudio-pcm|--stream-silence|--stream-tone 1..4] [--mixxx-feedback|--no-midi] [--pcm-gain 0..1] [--main-gain 0..1] [--headphone-gain 0..1] [--duration-ms 100..3000|--continuous]\n",name);
+    puts("Default: dry run, MIDI + silence. Default PCM gain is .00025; explicit playback ceiling 1 on logical outputs 3/4.");
     puts("--continuous explicitly enables ongoing silence/CoreAudio operation; Ctrl+C stops.");
     puts("--system-status | --install-system | --uninstall-system | --install-login | --uninstall-login | --emit-driver-plist");
 }
@@ -19,7 +19,7 @@ int main(int argc,const char **argv) {@autoreleasepool {
         if(!strcmp(argv[1],"--uninstall-login"))return kore_login_install(YES);
         if(!strcmp(argv[1],"--emit-driver-plist")){fputs(KORE_INFO_PLIST,stdout);return 0;}
     }
-    BOOL run=NO,midi=YES,feedback=NO,pcm=NO,midiOnly=NO,continuous=NO,modeSet=NO,durationSet=NO;
+    BOOL run=NO,midi=YES,feedback=NO,pcm=NO,midiOnly=NO,continuous=NO,modeSet=NO,durationSet=NO,gainSet=NO,mainGainSet=NO,headphoneGainSet=NO;double pcmGain=.00025,mainGain=.00025,headphoneGain=.00025;
     unsigned duration=3000,toneChannel=0;
     for(int i=1;i<argc;i++) {
         if(!strcmp(argv[i],"--help")){bridge_usage(argv[0]);return 0;}
@@ -27,6 +27,13 @@ int main(int argc,const char **argv) {@autoreleasepool {
         else if(!strcmp(argv[i],"--dry-run"))run=NO;
         else if(!strcmp(argv[i],"--mixxx-feedback")){midi=YES;feedback=YES;}
         else if(!strcmp(argv[i],"--no-midi")){midi=NO;feedback=NO;}
+        else if((!strcmp(argv[i],"--pcm-gain") || !strcmp(argv[i],"--main-gain") || !strcmp(argv[i],"--headphone-gain")) && i+1<argc) {
+            const char *option=argv[i];char *end;double value=strtod(argv[++i],&end);gainSet=YES;
+            if(!*argv[i] || *end || !isfinite(value) || value<0 || value>KORE_PCM_MAX_GAIN)return 2;
+            if(!strcmp(option,"--main-gain")){mainGain=value;mainGainSet=YES;}
+            else if(!strcmp(option,"--headphone-gain")){headphoneGain=value;headphoneGainSet=YES;}
+            else pcmGain=value;
+        }
         else if(!strcmp(argv[i],"--continuous"))continuous=YES;
         else if(!strcmp(argv[i],"--midi-only")){if(modeSet)return 2;modeSet=midiOnly=YES;}
         else if(!strcmp(argv[i],"--coreaudio-pcm")){if(modeSet)return 2;modeSet=pcm=YES;}
@@ -39,15 +46,18 @@ int main(int argc,const char **argv) {@autoreleasepool {
             if(!*argv[i] || *end || n<100 || n>3000)return 2;duration=(unsigned)n;durationSet=YES;
         } else {bridge_usage(argv[0]);return 2;}
     }
-    if((continuous && durationSet) || (midiOnly && !midi) || (toneChannel && (continuous || duration!=3000)))return 2;
+    if((gainSet && !pcm) || (continuous && durationSet) || (midiOnly && !midi) || (toneChannel && (continuous || duration!=3000)))return 2;
+    if(!mainGainSet)mainGain=pcmGain;
+    if(!headphoneGainSet)headphoneGain=pcmGain;
     setvbuf(stdout,NULL,_IOLBF,0);
     printf("BRIDGE CONFIG hardware=%s MIDI=%d feedback=%d audio=%s continuous=%d duration_ms=%u\n",run?"ENABLED":"disabled",midi,feedback,midiOnly?"off":pcm?"CoreAudio PCM":toneChannel?"capped tone":"silence",continuous,duration);
+    if(pcm)printf("BRIDGE PCM main_gain=%.8f headphone_gain=%.8f (ceiling=1), Main 1/2 + Headphones 3/4\n",mainGain,headphoneGain);
     if(!run)return 0;
     interrupted=0;signal(SIGINT,on_signal);signal(SIGTERM,on_signal);
     KoreNativeProbe *probe=[KoreNativeProbe new];
     probe->profile=caiaq_probe_id("observed");probe->zeroAtStart=1;probe->guardBytes=1;
     probe->streamMode=!midiOnly;probe->streamDurationMs=duration;probe->continuous=continuous;
-    probe->toneChannel=toneChannel;probe->toneAmplitude=.00025;probe->pcmMode=pcm;probe->feedbackMode=feedback;
+    probe->toneChannel=toneChannel;probe->toneAmplitude=.00025;probe->pcmMode=pcm;probe->pcmAmplitude=mainGain;probe->pcmHeadphoneAmplitude=headphoneGain;probe->feedbackMode=feedback;
     int rc=1;
     if(pcm) {
         probe->pcmDevice=kore_coreaudio_find();

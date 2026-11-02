@@ -107,3 +107,16 @@ python3 automation/coreaudio_loopback.py --run-tone
 It starts timestamp-accounted capture before the supervised bridge, renders one
 second of capped tone through the virtual device, sends a concurrent LCD update,
 stops the USB owner, and analyzes the complete ten-second recording.
+
+## Stereo output
+
+```sh
+python3 automation/coreaudio_loopback.py --run-tone --stereo-test --use-login-bridge
+```
+
+This explicitly uses the already running login service. The stereo analyzer
+identifies the two capture inputs, checks solo/dual windows and capture continuity,
+and reports noise-limited separation. Synthetic missing-channel, mono, dropout and
+gap cases must fail. `coreaudio-check` also decodes the real packed signed24 wire
+stream to verify digital channel isolation at both supported test gains.
+See [measured stereo results](docs/STEREO-OUTPUT-RESULTS.md).
