@@ -6,6 +6,8 @@
 #import <IOUSBHost/IOUSBHost.h>
 #include "native_plan.h"
 #include "tone.h"
+#include "../coreaudio/pcm_source.h"
+#include "../coreaudio/client.h"
 #include "native_discovery.h"
 #include <signal.h>
 #include <time.h>
@@ -41,7 +43,13 @@ static uint64_t native_now_ns(void) {
     IOUSBHostIsochronousTransaction inList[8],outList[8];
     int expected,profile,zeroAtStart,failed;
     unsigned guardBytes,streamDurationMs,bulkGeneration;
-    BOOL streamMode,streamFinished;
+    BOOL streamMode,streamFinished,pcmMode;
+    AudioDeviceID pcmDevice;
+    struct kore_pcm_ring pcmQueue;
+    struct kore_pcm_source pcmSource;
+    dispatch_queue_t pcmDispatch;
+    dispatch_source_t pcmTimer;
+    _Atomic int pcmError;
     unsigned toneChannel;double toneAmplitude;struct caiaq_tone tone;
     NSMutableArray<KoreNativeSlot *> *streamIns,*streamOuts;
     dispatch_source_t streamTimer;
@@ -68,6 +76,8 @@ static uint64_t native_now_ns(void) {
     if((self=[super init])) {
         queue=dispatch_queue_create("kore.native.usb",DISPATCH_QUEUE_SERIAL);
         done=dispatch_semaphore_create(0);bulkData=[NSMutableData dataWithLength:512];
+        atomic_init(&pcmQueue.written,0);atomic_init(&pcmQueue.read,0);
+        atomic_init(&pcmQueue.overruns,0);atomic_init(&pcmQueue.underruns,0);atomic_init(&pcmError,0);
     }
     return self;
 }
@@ -213,6 +223,7 @@ static uint64_t native_now_ns(void) {
 }
 - (BOOL)streamCanContinue {
     if(stopping || failed)return NO;
+    if(atomic_load(&pcmError)) {[self finishFailure:"CoreAudio property IPC" error:nil];return NO;}
     if(native_now_ns()>=streamDeadline) {
         stopping=YES;streamFinished=YES;dispatch_semaphore_signal(done);return NO;
     }
@@ -230,7 +241,7 @@ static uint64_t native_now_ns(void) {
     memset(slot->transactions,0,sizeof(slot->transactions));
     for(unsigned i=0;i<8;i++) {
         if(caiaq_pack((unsigned char *)slot->data.mutableBytes+plan.payload_offsets[i],
-            slot->data.length-plan.payload_offsets[i],lengths[i],toneChannel?caiaq_tone_byte:NULL,toneChannel?&tone:NULL)) {
+            slot->data.length-plan.payload_offsets[i],lengths[i],toneChannel?caiaq_tone_byte:pcmMode?kore_pcm_byte:NULL,toneChannel?(void *)&tone:pcmMode?(void *)&pcmSource:NULL)) {
             [self finishFailure:"stream silence packing" error:nil];return;
         }
         slot->transactions[i].requestCount=lengths[i];
@@ -309,6 +320,16 @@ static uint64_t native_now_ns(void) {
     uint64_t now=[interface frameNumberWithTime:NULL];
     if(!now) {[self finishFailure:"stream frame clock" error:nil];return;}
     if(toneChannel && caiaq_tone_init(&tone,toneChannel,toneAmplitude)) {[self finishFailure:"tone configuration" error:nil];return;}
+    if(pcmMode) {
+        pcmSource=(struct kore_pcm_source){.queue=&pcmQueue,.position={4,4},.amplitude=0.00025};
+        pcmDispatch=dispatch_queue_create("kore.coreaudio.prefetch",DISPATCH_QUEUE_SERIAL);
+        pcmTimer=dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER,0,0,pcmDispatch);
+        dispatch_source_set_timer(pcmTimer,dispatch_time(DISPATCH_TIME_NOW,0),NSEC_PER_MSEC,0);
+        dispatch_source_set_event_handler(pcmTimer,^{
+            OSStatus status=kore_coreaudio_pull(self->pcmDevice,&self->pcmQueue);
+            if(status)atomic_store(&self->pcmError,status);
+        });dispatch_resume(pcmTimer);
+    }
     streamStart=native_now_ns();streamDeadline=streamStart+(uint64_t)streamDurationMs*1000000;
     nextInFrame=now+4;
     streamTimer=dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER,0,0,queue);
@@ -317,7 +338,7 @@ static uint64_t native_now_ns(void) {
         self->stopping=YES;self->streamFinished=YES;dispatch_semaphore_signal(self->done);
     });
     dispatch_resume(streamTimer);
-    printf("NATIVE STREAM %s: 32 IN / 64 OUT slots, OUT lead=32ms, 8 microframes each, explicit contiguous frame numbers\n",toneChannel?"OPT-IN SINGLE-CHANNEL TONE":"silence");
+    printf("NATIVE STREAM %s: 32 IN / 64 OUT slots, OUT lead=32ms, 8 microframes each, explicit contiguous frame numbers\n",toneChannel?"OPT-IN SINGLE-CHANNEL TONE":pcmMode?"EXPLICIT COREAUDIO PCM (capped .00025)":"silence");
     for(KoreNativeSlot *slot in streamIns) {if(failed || stopping)break;[self submitStreamIn:slot];}
 }
 - (BOOL)waitForStream {
@@ -330,11 +351,14 @@ static uint64_t native_now_ns(void) {
         streamStart?(native_now_ns()-streamStart)/1000000.0:0.0,failed,streamFinished,
         inSubmitted,inCompletedBatches,inPackets,inZeroPackets,inBytes,inCancelled,
         outSubmitted,outCompletedBatches,outPackets,outBytes,outCancelled);
+    if(pcmMode)printf("NATIVE COREAUDIO consumed_frames=%llu underflows=%llu overruns=%llu\n",(unsigned long long)pcmSource.consumed,(unsigned long long)atomic_load(&pcmQueue.underruns),(unsigned long long)atomic_load(&pcmQueue.overruns));
     if(toneChannel)printf("NATIVE TONE channel=%u amplitude=%.8f frequency=440 PCM_rate=48000 generated_samples=%llu nonzero_samples=%llu\n",toneChannel,toneAmplitude,(unsigned long long)tone.generated,(unsigned long long)tone.nonzero);
     printf("NATIVE STREAM layouts all_zero=%llu trailing_zero=%llu peak_OUT_busy=%llu/64\n",allZeroBatches,trailingZeroBatches,maxOutBusy);
 }
 - (BOOL)stop {
     dispatch_sync(queue,^{self->stopping=YES;if(self->streamTimer)dispatch_source_cancel(self->streamTimer);});
+    if(pcmTimer) {dispatch_source_cancel(pcmTimer);dispatch_sync(pcmDispatch,^{});pcmTimer=nil;}
+    if(pcmDevice)kore_coreaudio_lease(pcmDevice,NO);
     BOOL success=YES;
     for(IOUSBHostPipe *pipe in @[bulkIn?:[NSNull null],bulkOut?:[NSNull null],isoIn?:[NSNull null],isoOut?:[NSNull null]]) {
         if((id)pipe==[NSNull null])continue;
@@ -366,9 +390,10 @@ static uint64_t native_now_ns(void) {
 @end
 int main(int argc,const char **argv) {
     @autoreleasepool {
-        int profile=caiaq_probe_id("observed"),zeroAtStart=1;unsigned guard=1;BOOL run=NO,discover=NO,stream=NO,layoutSet=NO,silenceSet=NO,amplitudeSet=NO;unsigned duration=3000,toneChannel=0;double toneAmplitude=0.00025;
+        int profile=caiaq_probe_id("observed"),zeroAtStart=1;unsigned guard=1;BOOL run=NO,discover=NO,stream=NO,pcmMode=NO,layoutSet=NO,silenceSet=NO,amplitudeSet=NO;unsigned duration=3000,toneChannel=0;double toneAmplitude=0.00025;
         for(int i=1;i<argc;i++) {
-            if(!strcmp(argv[i],"--stream-silence"))stream=silenceSet=YES;
+            if(!strcmp(argv[i],"--coreaudio-pcm"))pcmMode=stream=YES;
+            else if(!strcmp(argv[i],"--stream-silence"))stream=silenceSet=YES;
             else if(!strcmp(argv[i],"--stream-tone") && i+1<argc) {
                 char *end;unsigned long n=strtoul(argv[++i],&end,10);
                 if(!*argv[i] || *end || n<1 || n>4 || toneChannel)return 2;
@@ -392,8 +417,9 @@ int main(int argc,const char **argv) {
                 zeroAtStart=!strcmp(name,"start");
             } else if(!strcmp(argv[i],"--buffer-guard") && i+1<argc) {
                 const char *n=argv[++i];if(strcmp(n,"0") && strcmp(n,"1"))return 2;guard=(unsigned)(n[0]-'0');
-            } else {fprintf(stderr,"Usage: %s [--run|--dry-run|--discover] [--stream-silence --duration-ms 100..3000 | --stream-tone 1..4 --tone-amplitude 0..0.001] [--layout observed|rx|PROFILE] [--zero-offset start|compact] [--buffer-guard 0|1]\n",argv[0]);return 2;}
+            } else {fprintf(stderr,"Usage: %s [--run|--dry-run|--discover] [--coreaudio-pcm | --stream-silence --duration-ms 100..3000 | --stream-tone 1..4 --tone-amplitude 0..0.001] [--layout observed|rx|PROFILE] [--zero-offset start|compact] [--buffer-guard 0|1]\n",argv[0]);return 2;}
         }
+        if(pcmMode && (toneChannel || silenceSet)) {fprintf(stderr,"CoreAudio PCM excludes silence/tone modes\n");return 2;}
         if(amplitudeSet && !toneChannel) {fprintf(stderr,"tone-amplitude requires stream-tone\n");return 2;}
         if(toneChannel && silenceSet) {fprintf(stderr,"silence and tone are mutually exclusive\n");return 2;}
         if(toneChannel && duration!=3000) {fprintf(stderr,"tone test requires fixed 3000ms session\n");return 2;}
@@ -402,9 +428,9 @@ int main(int argc,const char **argv) {
         }
         setvbuf(stdout,NULL,_IOLBF,0);
         printf("NATIVE CONFIG hardware=%s layout=%s zero-offset=%s backing-guard=%u (not transmitted), PCM=%s, mode=%s\n",
-            run?"ENABLED":"disabled",(profile<0 || stream)?"rx":caiaq_probe_names[profile],zeroAtStart?"start":"compact",guard,toneChannel?"EXPLICIT TONE":"silence",stream?"bounded RX stream":"one batch");
+            run?"ENABLED":"disabled",(profile<0 || stream)?"rx":caiaq_probe_names[profile],zeroAtStart?"start":"compact",guard,toneChannel?"EXPLICIT TONE":pcmMode?"EXPLICIT COREAUDIO PCM":"silence",stream?"bounded RX stream":"one batch");
         if(toneChannel)printf("NATIVE CONFIG tone_channel=%u amplitude=%.8f (ceiling=0.001), 0.5s silence / 1s 440Hz / silence\n",toneChannel,toneAmplitude);
-        if(stream)printf("NATIVE CONFIG stream=%s duration_ms=%u (hard maximum 3000)\n",toneChannel?"tone":"silence",duration);
+        if(stream)printf("NATIVE CONFIG stream=%s duration_ms=%u (hard maximum 3000)\n",toneChannel?"tone":pcmMode?"coreaudio-pcm":"silence",duration);
         if(discover) {
             if(run) {fprintf(stderr,"--discover excludes --run\n");return 2;}
             io_service_t service=caiaq_native_find_interface();
@@ -415,8 +441,14 @@ int main(int argc,const char **argv) {
         }
         if(!run)return 0;
         signal(SIGINT,on_signal);signal(SIGTERM,on_signal);
-        KoreNativeProbe *probe=[KoreNativeProbe new];probe->profile=profile;probe->zeroAtStart=zeroAtStart;probe->guardBytes=guard;probe->streamMode=stream;probe->streamDurationMs=duration;probe->toneChannel=toneChannel;probe->toneAmplitude=toneAmplitude;
+        KoreNativeProbe *probe=[KoreNativeProbe new];probe->profile=profile;probe->zeroAtStart=zeroAtStart;probe->guardBytes=guard;probe->streamMode=stream;probe->streamDurationMs=duration;probe->toneChannel=toneChannel;probe->toneAmplitude=toneAmplitude;probe->pcmMode=pcmMode;
         int rc=1;
+        if(pcmMode) {
+            probe->pcmDevice=kore_coreaudio_find();
+            if(!probe->pcmDevice || kore_coreaudio_lease(probe->pcmDevice,YES)) {
+                fprintf(stderr,"CoreAudio prototype unavailable or already leased; no USB opened\n");return 1;
+            }
+        }
         if([probe open]) {
             const unsigned char info[]={1},params[]={9,1,2,176,0,1};
             if([probe exchange:info length:sizeof(info) reply:1]) {
@@ -428,7 +460,7 @@ int main(int argc,const char **argv) {
                             dispatch_sync(probe->queue,^{[probe startStream];});
                             if([probe waitForStream]) {
                                 dispatch_sync(probe->queue,^{});
-                                if(probe->streamFinished && !probe->failed && probe->outCompletedBatches)rc=0;
+                                if(probe->streamFinished && !probe->failed && probe->outCompletedBatches && (!pcmMode || probe->pcmSource.consumed))rc=0;
                             }
                         } else {
                             dispatch_sync(probe->queue,^{[probe startISO];});

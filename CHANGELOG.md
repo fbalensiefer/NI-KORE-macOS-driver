@@ -24,3 +24,14 @@ Prior development occurred as standalone `kore-midi-v3` through `v9` prototypes 
   CoreAudio, application PCM feed and audio-input support.
 - Organize historical experiments with a path/hash manifest; keep binaries,
   recordings, logs and the local Actions runner out of version control.
+
+### Follow-up: capture continuity and local CoreAudio prototype
+
+- Replace the measurement default with direct HAL input capture using preallocated
+  storage, exact sample counts and timestamp continuity checks. Repeated ten-second
+  captures contain all 441000 frames with zero gaps.
+- Add short host-relative clock and residual-noise analysis; KORE tone/payload
+  measurements agree on an approximately +200 ppm device clock offset.
+- Build and test a local signed AudioServerPlugIn output bundle and capped native
+  PCM feed; leave it uninstalled per user instruction. Sustained drift handling
+  and actual CoreAudio host integration are still pending.
