@@ -16,6 +16,10 @@ to .00025 peak on logical outputs 3/4, with about 171ms reported output latency.
 KORE audio input and full-level audio
 qualification are not implemented.
 
+The stereo headphone path has now been recorded with independent 440/660Hz
+left/right signals and a dual-channel window. Both channels were detected with
+continuous capture; see [stereo results and remaining measurement limits](docs/STEREO-OUTPUT-RESULTS.md).
+
 ## Build, install and run
 
 ```sh

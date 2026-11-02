@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
  * Explicit test of the virtual KORE device only, never the default output.
- * Full-scale virtual samples become .00025 peak at the bounded USB bridge.
+ * USB gain is independently bounded: default .00025, explicit test ceiling .001.
  */
 #import <Foundation/Foundation.h>
 #import <CoreAudio/CoreAudio.h>
@@ -10,7 +10,8 @@
 #include <string.h>
 #include <unistd.h>
 #include "client.h"
-struct Render {uint64_t frames;_Atomic int done,failed;};
+#include "test_signal.h"
+struct Render {uint64_t frames;int stereo;_Atomic int done,failed;};
 static OSStatus render(AudioDeviceID id,const AudioTimeStamp *now,const AudioBufferList *in,const AudioTimeStamp *it,AudioBufferList *out,const AudioTimeStamp *ot,void *ctx) {
     (void)id;(void)now;(void)in;(void)it;(void)ot;struct Render *r=ctx;
     if(!out || !out->mNumberBuffers){atomic_store(&r->failed,1);atomic_store(&r->done,1);return 0;}
@@ -28,19 +29,15 @@ static OSStatus render(AudioDeviceID id,const AudioTimeStamp *now,const AudioBuf
     if(channels!=2){atomic_store(&r->failed,1);atomic_store(&r->done,1);return 0;}
     if(atomic_load(&r->done))return 0;
     for(unsigned n=0;n<frames;n++) {
-        uint64_t index=r->frames+n;float value=0;
-        if(index>=24000 && index<72000) {
-            uint64_t k=index-24000;double gain=1;if(k<240)gain=k/240.;if(k>=47760)gain=(47999-k)/240.;
-            value=(float)(gain*sin(6.283185307179586*440*(k%1200)/48000.));
-        }
+        float value[2];kore_test_signal(r->frames+n,r->stereo,value);
         unsigned channel=0;
         for(UInt32 b=0;b<out->mNumberBuffers;b++) {
             float *values=out->mBuffers[b].mData;
             for(unsigned ch=0;ch<out->mBuffers[b].mNumberChannels;ch++,channel++)
-                values[n*out->mBuffers[b].mNumberChannels+ch]=channel==0?value:0;
+                values[n*out->mBuffers[b].mNumberChannels+ch]=value[channel];
         }
     }
-    r->frames+=frames;if(r->frames>=120000)atomic_store(&r->done,1);return 0;
+    r->frames+=frames;if(r->frames>=(r->stereo?KORE_STEREO_TEST_FRAMES:120000))atomic_store(&r->done,1);return 0;
 }
 static int send_feedback_test(void) {
     MIDIEndpointRef destination=0;
@@ -62,18 +59,24 @@ static int send_feedback_test(void) {
     printf("MIDI feedback test status=%d\n",status);return status?1:0;
 }
 int main(int argc,const char **argv) {@autoreleasepool {
-    BOOL feedback=argc==3 && !strcmp(argv[2],"--feedback");
-    if((argc!=2 && !feedback) || strcmp(argv[1],"--run")){puts("Dry run: --run sends a test signal exclusively to the KORE experimental virtual device");return 0;}
+    BOOL run=NO,feedback=NO,stereo=NO;
+    for(int i=1;i<argc;i++) {
+        if(!strcmp(argv[i],"--run"))run=YES;
+        else if(!strcmp(argv[i],"--feedback"))feedback=YES;
+        else if(!strcmp(argv[i],"--stereo-test"))stereo=YES;
+        else {fprintf(stderr,"Usage: %s [--run] [--feedback] [--stereo-test]\n",argv[0]);return 2;}
+    }
+    if(!run){puts("Dry run: --run sends a bounded signal exclusively to the KORE virtual output");return 0;}
     AudioDeviceID device=kore_coreaudio_find();if(!device){fprintf(stderr,"KORE virtual output not installed\n");return 1;}
     AudioStreamBasicDescription format={0};UInt32 size=sizeof(format);
     AudioObjectPropertyAddress a={kAudioDevicePropertyStreamFormat,kAudioObjectPropertyScopeOutput,kAudioObjectPropertyElementMain};
     if(AudioObjectGetPropertyData(device,&a,0,NULL,&size,&format) || format.mSampleRate!=48000 || format.mChannelsPerFrame!=2 || format.mBitsPerChannel!=32 || !(format.mFormatFlags&kAudioFormatFlagIsFloat))return 1;
-    struct Render state={0};AudioDeviceIOProcID proc=NULL;OSStatus status=AudioDeviceCreateIOProcID(device,render,&state,&proc);
+    struct Render state={.stereo=stereo};AudioDeviceIOProcID proc=NULL;OSStatus status=AudioDeviceCreateIOProcID(device,render,&state,&proc);
     if(status)return 1;status=AudioDeviceStart(device,proc);
     if(!status && feedback && send_feedback_test())status=kAudioHardwareUnspecifiedError;
-    for(unsigned i=0;!status && !atomic_load(&state.done) && i<350;i++)usleep(10000);
+    for(unsigned i=0;!status && !atomic_load(&state.done) && i<(stereo?650:350);i++)usleep(10000);
     OSStatus stopped=AudioDeviceStop(device,proc),destroyed=AudioDeviceDestroyIOProcID(device,proc);
     if(stopped || destroyed){fprintf(stderr,"Render teardown failed %d/%d\n",stopped,destroyed);fflush(NULL);_Exit(1);}
-    printf("Virtual output render frames=%llu status=%d\n",(unsigned long long)state.frames,status);
+    printf("Virtual output render frames=%llu stereo=%d status=%d\n",(unsigned long long)state.frames,stereo,status);
     return status || atomic_load(&state.failed) || !atomic_load(&state.done)?1:0;
 }}

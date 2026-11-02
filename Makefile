@@ -96,14 +96,17 @@ build/test-hal-capture: tests/test_hal_capture.m coreaudio/capture.m
 build/test-coreaudio-plugin: tests/test_coreaudio_plugin.c coreaudio/plugin.c coreaudio/pcm_ring.h coreaudio/pcm_source.h coreaudio/rate_match.h
 	@mkdir -p build
 	$(CC) -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined -o $@ $< -framework CoreAudio -framework CoreFoundation -lpthread
-coreaudio-check: build/test-rate-match hal-capture coreaudio-prototype build/kore-coreaudio-render build/test-hal-capture build/test-coreaudio-plugin build/test-coreaudio-bundle
+coreaudio-check: build/test-stereo-pcm build/test-stereo-signal build/test-rate-match hal-capture coreaudio-prototype build/kore-coreaudio-render build/test-hal-capture build/test-coreaudio-plugin build/test-coreaudio-bundle
+	./build/test-stereo-pcm
+	./build/test-stereo-signal
 	./build/test-rate-match
 	./build/test-hal-capture
 	./build/test-coreaudio-plugin
 	./build/test-coreaudio-bundle
 	python3 automation/test_native_quality.py
+	python3 automation/test_stereo_analyzer.py
 
-build/kore-coreaudio-render: coreaudio/render_test.m coreaudio/client.h coreaudio/pcm_ring.h
+build/kore-coreaudio-render: coreaudio/render_test.m coreaudio/test_signal.h coreaudio/client.h coreaudio/pcm_ring.h
 	@mkdir -p build
 	$(CC) -std=c11 -Wall -Wextra -Werror -O2 -fobjc-arc -o $@ $< -framework Foundation -framework CoreAudio -framework CoreMIDI
 
@@ -140,3 +143,11 @@ build/test-native-midi: tests/test_native_midi.m audio/native_probe.m audio/cont
 build/kore-coreaudio-system-test: coreaudio/system_test.m coreaudio/client.h coreaudio/pcm_ring.h
 	@mkdir -p build
 	$(CC) -std=c11 -Wall -Wextra -Werror -O2 -fobjc-arc -o $@ $< -framework Foundation -framework CoreAudio
+
+build/test-stereo-signal: tests/test_stereo_signal.c coreaudio/test_signal.h
+	@mkdir -p build
+	$(CC) -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined -o $@ $< -lm
+
+build/test-stereo-pcm: tests/test_stereo_pcm.c coreaudio/pcm_source.h coreaudio/rate_match.h coreaudio/pcm_ring.h audio/caiaq.h
+	@mkdir -p build
+	$(CC) -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined -o $@ $< -lm

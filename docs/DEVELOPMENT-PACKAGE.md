@@ -85,8 +85,8 @@ native silence diagnostic. Do not run any other KORE controller/probe process at
 the same time as the final bridge: they would contend for interface 0.
 
 The CoreAudio device is fixed 48kHz, float stereo output routed to the verified
-logical USB outputs 3/4 (headphone path). PCM remains capped to .00025 peak
-(about -72dBFS); this is a low-level development integration, not full-level audio
+logical USB outputs 3/4 (headphone path). PCM defaults to .00025 peak
+(about -72dBFS), with an explicit `--pcm-gain 0..0.001` test range; this is a low-level development integration, not full-level audio
 qualification. The adaptive rate matcher follows reservoir occupancy without
 changing USB frame order. Audio input, the other output pair as a CoreAudio stream,
 long-run clock qualification, and full-band resampling quality remain unfinished.
@@ -190,3 +190,12 @@ these endpoints depends on Mixxx's controller configuration. End-to-end Mixxx UI
 routing remains a manual check; offline tests cover generated messages and mapping
 behavior. Selecting the new output device for Mixxx audio also requires the
 installed HAL bundle and running bridge.
+
+## Stereo channel verification
+
+`python3 automation/coreaudio_loopback.py --run-tone --stereo-test --use-login-bridge`
+checks the running service without opening another USB owner. It emits separate
+440Hz left / 660Hz right / dual windows and records all MAYA44 inputs. See
+[stereo measurements](STEREO-OUTPUT-RESULTS.md). Without `--run-tone`, this helper
+stays hardware-free. The .001 gain option applies only to a separately supervised
+bridge after stopping the login agent; it never changes a running service's gain.

@@ -66,3 +66,13 @@ Prior development occurred as standalone `kore-midi-v3` through `v9` prototypes 
   startup/removal, backup preservation and embedded bundle metadata.
 - Add actual system HAL PCM integration test, final CLI safety checks and native
   MIDI callback regression tests. Live validation is recorded separately.
+
+## 2026-11-02 — stereo headphone validation
+
+- Add bounded left/right/dual 440/660Hz CoreAudio test patterns and all-channel
+  stereo loopback analysis, including capture continuity and negative controls.
+- Test the installed login service directly without a competing USB consumer.
+- Add explicit finite PCM gain 0..0.001 (default .00025) for controlled measurements,
+  preserving the original ceiling and normal startup level.
+- Verify exact independent signed24 wire samples and record both real stereo
+  measurements. Cable pinout and full quality/clock qualification remain open.
