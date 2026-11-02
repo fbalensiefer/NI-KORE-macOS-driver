@@ -1,47 +1,48 @@
-# KORE 1 – macOS MIDI + experimental stereo output (v1.0)
+# Native Instruments KORE 1 on macOS — MIDI bridge and experimental USB audio
 
-**Not a verified final audio driver.** MIDI is carried forward from hardware-tested versions. USB audio remains unverified; previous hardware tests produced only whining with nonzero CAIAQ checkbytes. This package is an integrated prototype, not a native CoreAudio HAL driver.
+> **Status (2 November 2026): MIDI/controller functionality has been tested; USB audio is NOT working as a verified analog PCM output.** This is a reverse-engineering research project, not a production audio driver or CoreAudio device. Do not use it for live performance. Start with speakers/headphones disconnected or at minimum gain.
+
+## Purpose
+
+Bring the legacy Native Instruments KORE 1 controller (USB VID `17cc`, PID `4711`) to modern macOS, including Apple Silicon. The bridge uses **libusb** for the proprietary CAIAQ USB protocol and **CoreMIDI** for virtual MIDI. The longer-term objective is reliable analog audio output and, eventually, an appropriate CoreAudio integration. The latter does **not** exist today.
+
+## Current capabilities
+
+- **MIDI/controller:** virtual CoreMIDI source, encoders/buttons/analog input, experimental Mixxx feedback, LEDs and LCD. Refer to the existing source and mappings for exact option support.
+- **Audio control path:** device-info query, accepted `AUDIO_PARAMS` handshake, and isochronous IN/OUT diagnostics.
+- **Experimental audio path:** a CoreAudio/BlackHole capture helper and float32 FIFO-to-24-bit CAIAQ encoder exist, but **audible output is not valid PCM**. These tools are research prototypes only.
 
 ## Architecture
 
-Mixxx audio -> **BlackHole 2ch** virtual output -> macOS default input -> `capture-blackhole` (CoreAudio AudioQueue) -> `/tmp/kore1-pcm.fifo` (48kHz stereo float32) -> `kore1-bridge` (24-bit S24_3BE CAIAQ framing) -> libusb isochronous OUT endpoint 0x06. CoreMIDI controller and feedback remain in `kore1-bridge`.
+`KORE 1 ↔ USB bulk endpoints 0x01/0x81 ↔ libusb bridge ↔ CoreMIDI ↔ DJ software`
 
-BlackHole is an **external dependency**; install separately. The input capture helper requires selecting BlackHole 2ch as the macOS default **input**, and Mixxx must output to BlackHole 2ch. No automatic sample-rate conversion is provided: configure BlackHole and Mixxx at 48 kHz, stereo. Do not select KORE as a macOS audio device: it is not registered as one.
+Experimental audio: `Mixxx → BlackHole 2ch (48 kHz) → capture-blackhole → /tmp/kore1-pcm.fifo (stereo float32 LE) → bridge → CAIAQ 24-bit samples/checkbytes → USB isochronous OUT 0x06 → KORE 1`. USB isochronous IN is `0x82`. BlackHole is a separate dependency. This is **not** a macOS audio output device.
 
-## Build on Apple Silicon
+## Build
+
+On macOS with Xcode Command Line Tools and Homebrew:
 
 ```sh
 brew install libusb pkg-config
 ./build.sh
 ```
 
-## MIDI only (recommended)
+The repository also has a MIDI-only Makefile target (`make`) and tests (`make check`). The integrated bridge build uses `build.sh`; inspect `./kore1-bridge --help` or source options before running experimental audio. Prefer `./run-midi.sh` for normal controller use.
 
-```sh
-./run-midi.sh
-```
+**Source provenance:** The published `kore1-bridge.c` may lag behind the hardware-tested local working tree. This documentation package intentionally does not overwrite that source. See `docs/REPOSITORY-SYNC.md` before merging the current Mac file. The `experimental/` ZIP is a *historical v0.23 snapshot*, not a verified replacement for the newest local file.
 
-## Experimental audio (only if you accept the risk)
+## Findings and research status
 
-1. Install BlackHole 2ch, set sample rate to 48 kHz in Audio MIDI Setup.
-2. Select BlackHole 2ch as macOS **input** and as Mixxx **output**. Ensure mic permission is granted to the Terminal app.
-3. Start `./run-audio.sh` in terminal 1.
-4. Start `./capture-blackhole` in terminal 2.
-5. Start Mixxx at low volume. If you hear whining, immediately stop playback and the processes.
+Read **[docs/AUDIO-FINDINGS.md](docs/AUDIO-FINDINGS.md)** for measured USB descriptors, firmware handshake, framing, test outcomes, and what is **not** established. Read **[docs/PROTOCOL.md](docs/PROTOCOL.md)** for the Linux CAIAQ reference and **[docs/NEXT-STEPS.md](docs/NEXT-STEPS.md)** for reproducible, conservative follow-up work.
 
-**CAUTION:** unplug headphones or keep volume at minimum for initial tests. Experimental packet framing can create unexpected noise. This is not safe to use for a live DJ set. Audio is capped to -12 dBFS in the bridge.
+## Limitations and safety
 
-## Limitations
+- No working analog PCM playback; test tones have produced whining/high-frequency artifacts.
+- No native CoreAudio HAL plugin, installer, system audio device, automatic clock-drift correction, or proven headphone routing.
+- The FIFO has no framing, resampling, or robust synchronization; underruns insert silence.
+- macOS/Apple Silicon compilation and hardware testing must be performed on the actual Mac; CI or static review is not proof of audio function.
+- Some diagnostic flags generate non-Linux-like traffic. Never assume a successful USB transfer means that the DAC accepted PCM.
 
-- Audio has **not** been verified on KORE 1 hardware. The original Linux driver may require RX-triggered scheduling, whereas this implementation uses fixed 176-byte OUT packets, independent of 2-byte IN responses.
-- No direct CoreAudio HAL device, installer, daemon or automatic startup.
-- `capture-blackhole` reads default input, not a selected UID; verify it is BlackHole, not a microphone.
-- PCM stream 0 is assumed to map to headphones; actual output channel mapping is unverified.
-- FIFO is unframed raw float32 little-endian. Overflow drops samples, and underrun inserts silence. No adaptive clock drift correction or resampling.
-- The two processes must start in the stated order. Only one instance each.
-- MIDI mappings for Mixxx are not included; use your existing Mixxx XML/JS mapping.
-- macOS compilation cannot be performed in this Linux environment; build on your Mac.
+## References and licensing
 
-## Reference
-
-Linux `sound/usb/caiaq/audio.c` and `device.c` are the protocol reference. The Linux CAIAQ implementation uses S24_3BE and inserts checkbytes in alignment-2 framing. Earlier bridge source is carried forward; audit its licensing before redistribution.
+Primary behavioral references: [Linux CAIAQ audio.c](https://github.com/torvalds/linux/blob/master/sound/usb/caiaq/audio.c) and [device.c](https://github.com/torvalds/linux/blob/master/sound/usb/caiaq/device.c). Respect the licenses of any adapted third-party source; review original attribution before redistributing code. This documentation distinguishes observed measurements from hypotheses.
