@@ -1,0 +1,122 @@
+[
+  {
+    "original_path": "README-RX-PACED.txt",
+    "archived_path": "experimental/legacy-libusb/README-RX-PACED.txt",
+    "sha256": "46f56839d5c7141c4965f016b389c957f99661c50e6e556dc26585296c3b8b5a"
+  },
+  {
+    "original_path": "README-TESTS.md",
+    "archived_path": "experimental/legacy-libusb/README-TESTS.md",
+    "sha256": "5e412772322efad9bca0d978fe0a4d2028d6b40895a4b1716490fc419e9f3dc5"
+  },
+  {
+    "original_path": "README-rxmatched.md",
+    "archived_path": "experimental/legacy-libusb/README-rxmatched.md",
+    "sha256": "f755d2196e77f1a88f26a8894ffee6ab6ffc5209b8876b5425b31791933b9040"
+  },
+  {
+    "original_path": "README-single176.md",
+    "archived_path": "experimental/legacy-libusb/README-single176.md",
+    "sha256": "b77f3b0510d3e08866b3dd714534427891815337b6a041563e9aaa7675229726"
+  },
+  {
+    "original_path": "README-sweep176.md",
+    "archived_path": "experimental/legacy-libusb/README-sweep176.md",
+    "sha256": "69d6ff96e32554239fc8ca5ff5f54e8d632ed37e1a085837d4f54d32af77f818"
+  },
+  {
+    "original_path": "README.txt",
+    "archived_path": "experimental/legacy-libusb/README.txt",
+    "sha256": "dfc245b106da834055b2b4a0292e47e585656458bf2ee710dc5348f67955ae51"
+  },
+  {
+    "original_path": "audit_pcm.py",
+    "archived_path": "experimental/legacy-libusb/audit_pcm.py",
+    "sha256": "75c2b5abc6c22cc729b664546dd1cda1cc2e737e3ff95127051e4f0dc82b7caf"
+  },
+  {
+    "original_path": "kore1-bridge-96-audit.c",
+    "archived_path": "experimental/legacy-libusb/kore1-bridge-96-audit.c",
+    "sha256": "500f716707cf26eebc7db2fc063142c63daa201e95ba81141573d68ba0d6f21d"
+  },
+  {
+    "original_path": "kore1-bridge-96.c",
+    "archived_path": "experimental/legacy-libusb/kore1-bridge-96.c",
+    "sha256": "dbe83f22d8e6863249931f9e2aa1fbe3a92fce1b82a9d98cbe48ddc4e0a6bf70"
+  },
+  {
+    "original_path": "kore1-bridge-rx-paced.c",
+    "archived_path": "experimental/legacy-libusb/kore1-bridge-rx-paced.c",
+    "sha256": "eb209da846a3d0194c96be07d68eb68931c8565741d6cf123f7d30c613824705"
+  },
+  {
+    "original_path": "kore1-bridge-rxmatched.c",
+    "archived_path": "experimental/legacy-libusb/kore1-bridge-rxmatched.c",
+    "sha256": "b64b7166d4f809fb68837e0b4aad79093ac29524f46cbf9b47b52406721e4bf1"
+  },
+  {
+    "original_path": "kore1-bridge-single176.c",
+    "archived_path": "experimental/legacy-libusb/kore1-bridge-single176.c",
+    "sha256": "bf3fb74915d52e8389bc6a95ceaf3da3bfe7bd2b7a93dd279928f13128db2871"
+  },
+  {
+    "original_path": "kore1-bridge-sweep176.c",
+    "archived_path": "experimental/legacy-libusb/kore1-bridge-sweep176.c",
+    "sha256": "7c534dd8e895b9b113d450a8aa3eabc0166ee6715417b31abf9219ca23259dd1"
+  },
+  {
+    "original_path": "test-kore-96.sh",
+    "archived_path": "experimental/legacy-libusb/test-kore-96.sh",
+    "sha256": "733e32eb03aeacc04e349aa7d3ee12c33f4e9083fdfb709970f722906a4d35e9"
+  },
+  {
+    "original_path": "test-kore-c-payload.py",
+    "archived_path": "experimental/legacy-libusb/test-kore-c-payload.py",
+    "sha256": "c71f425a01652695b6790f2df4bcb77ba617206a273980622e5d42ff23a92372"
+  },
+  {
+    "original_path": "test-kore-pcm-offline.py",
+    "archived_path": "experimental/legacy-libusb/test-kore-pcm-offline.py",
+    "sha256": "596dede955b200721c4ca9fdcef0787156705a30b921b7e99ee61f96f15df878"
+  },
+  {
+    "original_path": "test_rxmatched.py",
+    "archived_path": "experimental/legacy-libusb/test_rxmatched.py",
+    "sha256": "4cb4b82bd4132efcdfe84d7ae683cf44934c080e490806798bae3faa8b598ca7"
+  },
+  {
+    "original_path": "README.md (before cleanup)",
+    "archived_path": "experimental/legacy-libusb/README-before-cleanup.md",
+    "sha256": "d6101550286ba930bea170cb48e5a1402fe364299fffa7096bbe6623850f0804"
+  },
+  {
+    "original_path": "apply_kore_96.py",
+    "archived_path": "experimental/legacy-libusb/apply_kore_96.py",
+    "sha256": "cefce2d446867fa1a7db40f09dd14704ef729cb10edcf84176e5938f2cc3b273"
+  },
+  {
+    "original_path": "apply_pcm_diagnostics.py",
+    "archived_path": "experimental/legacy-libusb/apply_pcm_diagnostics.py",
+    "sha256": "ede1af2c1426a54e2556381e826ace7c2aa4eee3638e9dbafadd5e6e5ef05b52"
+  },
+  {
+    "original_path": "kore_pcm_offline_test.py",
+    "archived_path": "experimental/legacy-libusb/kore_pcm_offline_test.py",
+    "sha256": "9453b6fd3a0167f99f6214b08ca58fea1f2fcb1b25f983155ed4cfb8080d3767"
+  },
+  {
+    "original_path": "kore-midi-v10.c",
+    "archived_path": "experimental/legacy-libusb/kore-midi-v10.c",
+    "sha256": "d75cccf73166f12be6f639adc08a777f3daed62e83c4b4f30011dba4d8bb89b8"
+  },
+  {
+    "original_path": "test-audio-hardware.sh",
+    "archived_path": "experimental/legacy-libusb/test-audio-hardware.sh",
+    "sha256": "9215e719777a275d45881bfb248c8a96c6fa97b84ab4caac6fd04f1b11ea661d"
+  },
+  {
+    "original_path": "test-audio-offline.sh",
+    "archived_path": "experimental/legacy-libusb/test-audio-offline.sh",
+    "sha256": "b849ac98e35bd1f2744e0232ca019b18a654d40286aefa30f7450df6ede88881"
+  }
+]

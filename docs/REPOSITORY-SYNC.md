@@ -1,3 +1,7 @@
+> Historical research/handoff snapshot, superseded on November 2, 2026.
+> See the repository README and current native playback results. Old command
+> examples and status statements below are retained as evidence, not current instructions.
+
 # How to merge this documentation with the latest local bridge
 
 GitHub's public `kore1-bridge.c` is older than the source excerpts used in the 2026-11-02 debugging session. The current local file is the authoritative source for the latest experiments. The documentation update intentionally does **not** replace it with a historical ZIP snapshot.

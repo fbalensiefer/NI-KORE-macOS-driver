@@ -76,7 +76,6 @@ static int audio_linux_urbs=0; /* opt-in Linux-style 32 concurrent IN URBs */
 static int audio_checkbyte_pattern=0; /* 0=linux,1=zero,2=phase-invert,3=swap-stream,4=constant 01 03,5=constant 00 02 */
 static int audio_checkbyte_zero=0; /* opt-in A/B control: zero the Linux alignment-2 check bytes */
 static uint64_t audio_checkbytes_written=0;
-static int audio_out_96=0; /* opt-in 96-byte ISO OUT; keep AUDIO_PARAMS bpp=176 */
 static int audio_out_fixed=0; /* explicitly enabled; never default */
 static int audio_spec_seen=0, audio_alignment=-1, audio_streams=-1;
 static int audio_ack=-1, audio_ack_seen=0;
@@ -281,27 +280,7 @@ static void pcm_next_frame(void) {
     pcm_stereo_valid=1;
 }
 static void linux_make_pcm_sample(int stream,int chan,double frequency) {
-    static int route=-1;
-    static double phases[2]={0.0,0.0};
-
-    if(route<0) {
-        const char *v=getenv("KORE_TEST_STREAM");
-        route=0;
-        if(v && !strcmp(v,"1")) route=1;
-        else if(v && !strcmp(v,"both")) route=2;
-        fprintf(stderr,"KORE test routing: %s\\n",
-                route==0?"stream 0":route==1?"stream 1":"both streams");
-    }
-
-    if(pcm_fifo_mode && stream!=0) {
-        memset(linux_pcm_sample[stream][chan],0,3);
-        return;
-    }
-    if(!pcm_fifo_mode &&
-       ((route==0 && stream!=0) || (route==1 && stream!=1))) {
-        memset(linux_pcm_sample[stream][chan],0,3);
-        return;
-    }
+    if(stream!=0) {memset(linux_pcm_sample[stream][chan],0,3);return;}
     if(pcm_fifo_mode) {
         if(chan==0 || !pcm_stereo_valid) pcm_next_frame();
         memcpy(linux_pcm_sample[stream][chan],pcm_stereo_bytes+chan*3,3);
@@ -309,23 +288,16 @@ static void linux_make_pcm_sample(int stream,int chan,double frequency) {
         return;
     }
     /* -60 dBFS nominal, temporary diagnostic tone only */
-    frequency=(stream==0)?440.0:880.0;
-    int32_t sample=(getenv("KORE_TEST_SILENCE") &&
-                     !strcmp(getenv("KORE_TEST_SILENCE"),"1"))
-        ? 0 : (int32_t)(sin(phases[stream])*8192.0);
+    int32_t sample=(int32_t)(sin(linux_pcm_phase)*8192.0);
     linux_pcm_sample[stream][chan][0]=(unsigned char)((sample>>16)&255);
     linux_pcm_sample[stream][chan][1]=(unsigned char)((sample>>8)&255);
     linux_pcm_sample[stream][chan][2]=(unsigned char)(sample&255);
     if(chan==1) {
-        phases[stream]+=6.2831853071795864769*frequency/48000.0;
-        if(phases[stream]>=6.2831853071795864769)
-            phases[stream]-=6.2831853071795864769;
+        linux_pcm_phase+=6.2831853071795864769*frequency/48000.0;
+        if(linux_pcm_phase>=6.2831853071795864769) linux_pcm_phase-=6.2831853071795864769;
         linux_pcm_frames++;
     }
 }
-/* KORE_PCM_DIAG_V1: passive encoder instrumentation; no changes to USB payload. */
-static uint64_t diag_tone_packets=0, diag_tone_pcm_bytes=0, diag_tone_nonzero=0;
-static int diag_first_tone_packet=0;
 static void linux_fill_pcm(unsigned char *buf, unsigned len, int tone) {
     memset(buf,0,len);
     if(audio_alignment!=2 || audio_streams!=2) return;
@@ -336,9 +308,7 @@ static void linux_fill_pcm(unsigned char *buf, unsigned len, int tone) {
             unsigned chan=(pos/3u)&1u;
             unsigned byte=pos%3u;
             if(byte==0) linux_make_pcm_sample(stream,(int)chan,440.0);
-            unsigned char out=(tone || pcm_fifo_mode)?linux_pcm_sample[stream][chan][byte]:0;
-                buf[i++]=out;
-                if(tone && stream==0) {diag_tone_pcm_bytes++;if(out) diag_tone_nonzero++;}
+            buf[i++]=(tone || pcm_fifo_mode)?linux_pcm_sample[stream][chan][byte]:0;
             linux_pcm_sample_byte[stream]=(pos+1u)%6u;
         }
         if(i%(2u*4u)==2u*2u) {
@@ -346,19 +316,7 @@ static void linux_fill_pcm(unsigned char *buf, unsigned len, int tone) {
                 buf[i]=(unsigned char)((stream<<1)|(~(i/(2u*4u))&1u));
         }
     }
-
-    if(tone) {
-        diag_tone_packets++;
-        if(!diag_first_tone_packet) {
-            diag_first_tone_packet=1;
-            fprintf(stderr,"PCM_DIAG first tone packet length=%u first_32=",len);
-            for(unsigned j=0;j<len && j<32;j++) fprintf(stderr,"%02x%s",buf[j],j+1<len && j<31?" ":"");
-            fputc('\n',stderr);
-        }
-    }
 }
-/* End of linux_fill_pcm() is immediately above this comment. */
-
 static void hp_fill_packet(unsigned char *buf, unsigned len) {
     uint64_t elapsed=clock_ms()-(hp_audio_start_ms?hp_audio_start_ms:hp_start_ms);
     int tone=hp_tone && elapsed>=1000 && elapsed<2200;
@@ -366,59 +324,7 @@ static void hp_fill_packet(unsigned char *buf, unsigned len) {
     if(tone) hp_packet_counts[1]++;else hp_packet_counts[0]++;
 }
 static uint64_t audio_tx_rearms=0, audio_tx_rearm_errors=0;
-
-/* KORE_TIMING_DIAG_V1 */
-#include <time.h>
-
-static uint64_t timing_rx_last_us = 0;
-static uint64_t timing_tx_last_us = 0;
-static uint64_t timing_rx_count = 0;
-static uint64_t timing_tx_count = 0;
-static uint64_t timing_rx_min_us = UINT64_MAX;
-static uint64_t timing_tx_min_us = UINT64_MAX;
-static uint64_t timing_rx_max_us = 0;
-static uint64_t timing_tx_max_us = 0;
-static uint64_t timing_rx_sum_us = 0;
-static uint64_t timing_tx_sum_us = 0;
-
-static uint64_t timing_now_us(void) {
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (uint64_t)ts.tv_sec * 1000000ULL +
-           (uint64_t)ts.tv_nsec / 1000ULL;
-}
-
-static void timing_record(int is_rx) {
-    uint64_t now = timing_now_us();
-    uint64_t *last = is_rx ? &timing_rx_last_us : &timing_tx_last_us;
-    uint64_t *count = is_rx ? &timing_rx_count : &timing_tx_count;
-    uint64_t *min = is_rx ? &timing_rx_min_us : &timing_tx_min_us;
-    uint64_t *max = is_rx ? &timing_rx_max_us : &timing_tx_max_us;
-    uint64_t *sum = is_rx ? &timing_rx_sum_us : &timing_tx_sum_us;
-
-    if (*last != 0) {
-        uint64_t delta = now - *last;
-        if (delta < *min) *min = delta;
-        if (delta > *max) *max = delta;
-        *sum += delta;
-        (*count)++;
-
-        if ((*count % 1000) == 0) {
-            fprintf(stderr,
-                "TIMING %s count=%llu min_us=%llu avg_us=%llu max_us=%llu\n",
-                is_rx ? "RX" : "TX",
-                (unsigned long long)*count,
-                (unsigned long long)*min,
-                (unsigned long long)(*sum / *count),
-                (unsigned long long)*max);
-        }
-    }
-
-    *last = now;
-}
-
 static void LIBUSB_CALL on_audio_tx(struct libusb_transfer *t) {
-    timing_record(0);
     struct audio_out_slot *slot=(struct audio_out_slot *)t->user_data;
     if(t->status==LIBUSB_TRANSFER_COMPLETED) {
         for(int i=0;i<t->num_iso_packets;i++) {
@@ -446,7 +352,7 @@ static void LIBUSB_CALL on_audio_tx(struct libusb_transfer *t) {
         }
         if(hp_tone || pcm_fifo_mode) {
             for(int k=0;k<t->num_iso_packets;k++)
-                hp_fill_packet(slot->buffer+k*(audio_out_96?96u:(unsigned)audio_bpp),audio_out_96?96u:(unsigned)audio_bpp);
+                hp_fill_packet(slot->buffer+k*(unsigned)audio_bpp,(unsigned)audio_bpp);
         }
         slot->busy=1;
         int r=libusb_submit_transfer(t);
@@ -455,8 +361,6 @@ static void LIBUSB_CALL on_audio_tx(struct libusb_transfer *t) {
               fprintf(stderr,"AUDIO independent OUT rearm: %s\n",libusb_error_name(r));}
     }
 }
-static int audio_rx_tone=0;
-
 static void audio_send_silence_matching_rx(struct libusb_transfer *rx) {
     if(!audio_duplex || audio_tx_independent) return;
     struct audio_out_slot *slot=NULL;
@@ -472,14 +376,13 @@ static void audio_send_silence_matching_rx(struct libusb_transfer *rx) {
     unsigned offset=0;
     int any=0;
     for(int i=0;i<AUDIO_PACKETS;i++) {
-        unsigned n=audio_out_fixed ?
-            (audio_out_96 ? 96u : (unsigned)audio_bpp) :
+        unsigned n=audio_out_fixed ? (unsigned)audio_bpp :
             (rx->iso_packet_desc[i].status==LIBUSB_TRANSFER_COMPLETED ? rx->iso_packet_desc[i].actual_length : 0);
         if(n>AUDIO_PACKET_SIZE) n=0;
         slot->transfer->iso_packet_desc[i].length=n;
         if(n) {
             if(n==2) v21_fill_short(slot->buffer+offset,n);
-            else linux_fill_pcm(slot->buffer+offset,n,audio_rx_tone);
+            else linux_fill_pcm(slot->buffer+offset,n,0);
             audio_sync_out_packet(slot->buffer+offset,n);
             if(audio_hex_probe && audio_hex_out_count<AUDIO_HEX_LIMIT)
                 audio_hex_line("OUT",++audio_hex_out_count,slot->buffer+offset,n);
@@ -488,37 +391,19 @@ static void audio_send_silence_matching_rx(struct libusb_transfer *rx) {
         offset+=n;
     }
     if(!any) return;
-    slot->transfer->length=(int)offset;
-    slot->busy=1;
-    
-    /* One-time diagnostic of isochronous packet layout. */
-    static int iso_layout_checked = 0;
-
-    if (!iso_layout_checked) {
-        iso_layout_checked = 1;
-
-        unsigned total = 0;
-
-        for (int i = 0; i < slot->transfer->num_iso_packets; i++) {
-            unsigned n = slot->transfer->iso_packet_desc[i].length;
-
-            fprintf(stderr,
-                "ISO_LAYOUT packet=%d offset=%u length=%u\\n",
-                i, total, n);
-
-            total += n;
-        }
-
-        fprintf(stderr,
-            "ISO_LAYOUT total=%u transfer_length=%d\\n",
-            total, slot->transfer->length);
-
-        if (total != (unsigned)slot->transfer->length) {
-            fprintf(stderr,
-                "ISO_LAYOUT ERROR: length mismatch\\n");
+    /* Diagnostic guard: reject incomplete RX-derived ISO batches rather than
+     * passing zero-length packet descriptors to the macOS libusb backend.
+     * Fixed-length mode remains unchanged. */
+    if(!audio_out_fixed) {
+        for(int i=0;i<AUDIO_PACKETS;i++) {
+            if(slot->transfer->iso_packet_desc[i].length==0) {
+                audio_tx_skipped++;
+                return;
+            }
         }
     }
-
+    slot->transfer->length=(int)offset;
+    slot->busy=1;
     int r=libusb_submit_transfer(slot->transfer);
     if(r) {
         slot->busy=0;
@@ -561,7 +446,7 @@ static int audio_prime_out_before_in(void) {
 static int audio_start_independent_out(void) {
     const int slots=8;
     if(audio_bpp!=176 || (!audio_out_fixed && !audio_independent_short)) return -1;
-    const unsigned tx_n=audio_independent_short?2u:(audio_out_96?96u:(unsigned)audio_bpp);
+    const unsigned tx_n=audio_independent_short?2u:(unsigned)audio_bpp;
     for(int j=0;j<slots;j++) {
         struct audio_out_slot *slot=&audio_out_slots[j];
         if(!slot->transfer || !slot->buffer || slot->busy) return -1;
@@ -602,12 +487,11 @@ static int audio_prepare_out(libusb_device_handle *handle) {
             AUDIO_PACKETS*AUDIO_PACKET_SIZE,AUDIO_PACKETS,on_audio_tx,slot,0);
     }
     printf("AUDIO duplex enabled: %d-slot asynchronous silent OUT pool on EP 0x06; mode=%s.\n",
-           AUDIO_OUT_POOL,audio_out_96?"FIXED 96-byte experimental":"FIXED 176-byte diagnostic");
+           AUDIO_OUT_POOL,audio_out_fixed?"FIXED 176-byte diagnostic":"legacy matched IN lengths");
     return 0;
 }
 
 static void LIBUSB_CALL on_audio_rx(struct libusb_transfer *t) {
-    timing_record(1);
     if(t->status==LIBUSB_TRANSFER_COMPLETED) {
         for(int i=0;i<t->num_iso_packets;i++) {
             struct libusb_iso_packet_descriptor *p=&t->iso_packet_desc[i];
@@ -1113,12 +997,12 @@ static int run_audio_init(void) {
     const int sample_bytes=(audio_alignment>=2)?4:3;
     audio_bpp=((48000/8000)+5)*sample_bytes*2*audio_streams;
     if(audio_bpp>512) audio_bpp=512;
-    unsigned char command[]={0x09,0x00,0x01,0x02,
+    unsigned char command[]={0x09,0x01,0x02,
         (unsigned char)(audio_bpp&255), (unsigned char)(audio_bpp>>8),0x01};
     printf("AUDIO init sending 0x09: 48000 Hz, 24 bits, alignment=%d, streams=%d, bpp=%d, microframe=1\n",
            audio_alignment,audio_streams,audio_bpp);
     audio_ack_seen=0; audio_ack=-1;
-    TRACE_STARTUP("AUDIO_PARAMS command bytes=09 00 01 02 %02X %02X 01",command[4],command[5]);
+    TRACE_STARTUP("AUDIO_PARAMS command bytes=09 01 02 %02X %02X 01",command[3],command[4]);
     if(send_usb(command,(int)sizeof(command))) return -1;
     uint64_t limit=clock_ms()+1500;
     while(running && !audio_ack_seen && clock_ms()<limit) {
@@ -1472,7 +1356,6 @@ static void usage(const char *name) {
     puts("--audio-echo-short (v0.23: replay most recent 2-byte IN payload instead of 00 00; diagnostic only). ");
     puts("--audio-independent-short (v0.23: independent 2-byte silence OUT; requires --audio-duplex-silence; excludes --audio-out-fixed).");
     puts("--audio-out-fixed (v0.13 opt-in: send full audio_bpp bytes per OUT microframe, independent of IN lengths; requires duplex).");
-    puts("--audio-out-96 (EXPERIMENTAL: with --headphone-tone or --pcm-fifo, transmit 96-byte iso OUT packets; AUDIO_PARAMS bpp remains 176).");
     puts("Experimental LCD: --lcd-test [--lcd-contrast 0..100] [--lcd-backlight 0..100] [--lcd-duration-ms 100..30000] [--lcd-invert] [--lcd-blank-on-exit].");
     puts("WARNING: --lcd-test sends KORE 2 reference LCD USB packets to KORE 1; LCD compatibility is not verified.");
 }
@@ -1520,8 +1403,6 @@ int main(int argc,char **argv) {
         else if(!strcmp(argv[i],"--audio-startup-trace")) audio_startup_trace=1;
         else if(!strcmp(argv[i],"--audio-linux-urbs")) audio_linux_urbs=1;
         else if(!strcmp(argv[i],"--audio-out-fixed")) audio_out_fixed=1;
-        else if(!strcmp(argv[i],"--audio-out-96")) audio_out_96=1;
-        else if(!strcmp(argv[i],"--audio-rx-tone")) audio_rx_tone=1;
         else if(!strcmp(argv[i],"--audio-report-ms") && i+1<argc) audio_report_ms=(unsigned int)atoi(argv[++i]);
         else if(!strcmp(argv[i],"--lcd-contrast") && i+1<argc) lcd_contrast_pct=atoi(argv[++i]);
         else if(!strcmp(argv[i],"--lcd-backlight") && i+1<argc) lcd_backlight_pct=atoi(argv[++i]);
@@ -1569,9 +1450,7 @@ int main(int argc,char **argv) {
         else if(!strcmp(argv[i],"--help")) {usage(argv[0]);return 0;}
         else {usage(argv[0]);return 2;}
     }
-    if(audio_rx_tone && (!audio_duplex || !audio_out_fixed || audio_tx_independent)) {fprintf(stderr,"--audio-rx-tone requires --audio-duplex-silence --audio-out-fixed\n");return 2;}
     if(audio_checkbyte_pattern && (!audio_duplex || !audio_out_fixed || !audio_tx_independent)) {fprintf(stderr,"--audio-checkbyte-zero requires independent fixed-length OUT diagnostic\n");return 2;}
-    if(audio_out_96 && (!audio_out_fixed || (audio_tx_independent ? (!hp_tone && !pcm_fifo_mode) : !audio_rx_tone) || audio_independent_short || audio_start_prime)) {fprintf(stderr,"--audio-out-96 requires --headphone-tone or --pcm-fifo in independent fixed OUT mode\n");return 2;}
     if(hp_tone) {puts("WARNING: experimental PCM mapping, low amplitude; headphones OFF ears, volume MINIMUM. Pattern timing begins at ISO OUT start.");hp_start_ms=clock_ms();}
     if(audio_echo_short && (!audio_duplex || audio_out_fixed || hp_tone)) {fprintf(stderr,"--audio-echo-short requires short silence duplex, no fixed OUT or tone\n");return 2;}
     if(audio_independent_short && audio_out_fixed) {fprintf(stderr,"Cannot combine short independent and fixed OUT\n");return 2;}
@@ -1660,8 +1539,7 @@ int main(int argc,char **argv) {
             fprintf(stderr,"AUDIO fixed OUT safety stop: expected alignment=2 streams=2 bpp=176.\n");
             goto done;
         }
-        if(audio_out_96) puts("AUDIO EXPERIMENT: OUT length=96 per microframe; AUDIO_PARAMS bpp=176; device interpretation unverified.");
-        else puts("AUDIO v0.15 EXPERIMENT: OUT length=176 per microframe; PCM format and checksum remain unverified.");
+        puts("AUDIO v0.15 EXPERIMENT: OUT length=176 per microframe; PCM format and checksum remain unverified.");
     }
     if(audio_linux_trace) {
         printf("AUDIO LINUX TRACE: configured alignment=%d streams=%d bpp=%d, IN_URBs=%d, OUT=%s, scheduling=%s\n",
@@ -1720,9 +1598,6 @@ done:
     running=0;
     if(pcm_fifo_mode) fprintf(stderr,"PCM FIFO frames=%llu underflows=%llu\n",(unsigned long long)pcm_frames_read,(unsigned long long)pcm_underflows);
     if(pcm_fd>=0) {close(pcm_fd);pcm_fd=-1;}
-    fprintf(stderr,"PCM_DIAG tone_packets=%llu pcm_stream0_bytes=%llu nonzero=%llu frames_stream0=%llu\n",
-        (unsigned long long)diag_tone_packets,(unsigned long long)diag_tone_pcm_bytes,
-        (unsigned long long)diag_tone_nonzero,(unsigned long long)linux_pcm_frames);
     if(hp_tone) fprintf(stderr,"HP_TONE samples=%llu phase_packets_silence=%llu phase_packets_440=%llu phase_packets_880=%llu\n",(unsigned long long)hp_tone_samples,(unsigned long long)hp_packet_counts[0],(unsigned long long)hp_packet_counts[1],(unsigned long long)hp_packet_counts[2]);
     if(audio_tx_independent) fprintf(stderr,"AUDIO v0.15 checkbytes generated=%llu mode=%s\n",(unsigned long long)audio_checkbytes_written,(const char*[]){"linux","zero","phase","swap","fixed13","fixed02"}[audio_checkbyte_pattern]);
     if(audio_tx_independent) fprintf(stderr,"AUDIO v0.15 independent OUT rearm stats: successful=%llu failed=%llu\n",(unsigned long long)audio_tx_rearms,(unsigned long long)audio_tx_rearm_errors);

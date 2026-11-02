@@ -13,6 +13,7 @@ $(TARGET): src/kore-midi-v10.c
 
 check:
 	python3 test_repository.py
+	python3 tests/test_audio_patch.py
 	python3 test_patch.py
 	python3 automation/test_analyzer.py
 	@if command -v node >/dev/null 2>&1; then node --check KORE-1-Mixxx-v10.js; else echo "SKIP: Node unavailable"; fi

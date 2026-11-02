@@ -1,5 +1,9 @@
 # Audio validation milestone — 2026-11-02
 
+Earlier standalone filenames in this research log now live under
+`experimental/legacy-libusb/`. Current native playback evidence is documented in
+[TONE-PLAYBACK-RESULTS.md](TONE-PLAYBACK-RESULTS.md).
+
 ## Build and offline verification
 
 On macOS with Xcode command line tools, pkg-config and libusb already installed:

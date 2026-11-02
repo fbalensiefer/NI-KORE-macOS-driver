@@ -1,3 +1,7 @@
+> Historical automation setup package. The current repository entry points are
+> documented in README.md and TESTING.md; the old self-hosted runner setup below
+> is optional historical guidance, not required for native audio development.
+
 # NI KORE 1: automated macOS test runner
 
 Target repository: https://github.com/fbalensiefer/NI-KORE-macOS-driver

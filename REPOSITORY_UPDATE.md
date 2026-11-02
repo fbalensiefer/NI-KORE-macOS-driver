@@ -1,3 +1,7 @@
+> Historical research/handoff snapshot, superseded on November 2, 2026.
+> See the repository README and current native playback results. Old command
+> examples and status statements below are retained as evidence, not current instructions.
+
 # Experimental CAIAQ audio / MIDI update
 
 This is an additive update for `fbalensiefer/NI-KORE-macOS-driver`. It deliberately leaves `src/`, `mixxx/`, the existing `Makefile`, and the existing README unchanged.
