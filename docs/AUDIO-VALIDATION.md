@@ -290,3 +290,13 @@ If it completes, repeat the matching `observed` profile in a separate process
 before treating last-descriptor position as reproducible. A timing-preserving
 scheduler adaptation still needs design and native testing; success of a reordered
 probe would not make reordering a valid audio implementation.
+
+
+## Native transport development
+
+The original synthetic `observed` layout was rejected again after the same-size
+last-data comparison succeeded. The next implementation preserves the rejected
+sequence through public IOUSBHost transaction offsets. See
+[NATIVE-TRANSPORT.md](NATIVE-TRANSPORT.md) for the implementation, offline tests,
+limitations and the prepared single-batch hardware command. No native hardware
+result is claimed.
