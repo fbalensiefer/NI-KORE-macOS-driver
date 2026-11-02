@@ -73,8 +73,9 @@ not DAC volume, headphone enable or routing. This does not prove hardware state.
 
 Linux's ALSA prepare/trigger and capture panic tracking are not fully ported.
 The new bridge is a diagnostic transport, not a completed ALSA/CoreAudio port.
-It does not decode input PCM or the alignment-2 IN panic bits. The old
-"Linux PCM threshold" log was incorrect: bpp is not a decoder threshold.
+It does not decode input PCM or the alignment-2 IN panic bits. Linux read_in_urb ignores capture payloads shorter than bpp; OUT filling does
+not apply that threshold. The bridge only counts this comparison and does not
+implement the capture decoder.
 
 ## INVALID_PARAM investigation
 

@@ -617,7 +617,7 @@ static void audio_report(int final) {
         (unsigned long long)audio_out_hist[0],(unsigned long long)audio_out_hist[1],
         (unsigned long long)audio_out_hist[2],(unsigned long long)audio_out_hist[3],audio_out_max,
         (unsigned long long)audio_tx_batches);
-    printf("AUDIO configured-bpp comparison: eligible=%llu short=%llu (bpp=%d; length comparison only; not a Linux decoder threshold)\n",
+    printf("AUDIO configured-bpp comparison: eligible=%llu short=%llu (bpp=%d; Linux capture skips shorter packets; OUT has no such threshold)\n",
            (unsigned long long)audio_pcm_eligible,(unsigned long long)audio_pcm_short,audio_bpp);
     if(audio_rx_matched_zero) printf("AUDIO RX-MATCH zero_descriptors=%llu mixed_batches=%llu all_zero_batches=%llu (macOS backend compatibility NOT established)\n",
         (unsigned long long)audio_rx_matched_zero_packets,(unsigned long long)audio_rx_matched_mixed_batches,(unsigned long long)audio_rx_matched_all_zero);
