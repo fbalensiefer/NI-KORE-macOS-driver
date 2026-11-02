@@ -86,9 +86,10 @@ marshalling or end-to-end app-to-USB playback; these remain to be tested.
 
 The plug-in clock currently follows the host at a nominal 48000 Hz. The measured
 KORE payload/sample clock is about +200 ppm relative to the host in short tests.
-Buffering alone cannot absorb this indefinitely: implement and validate drift
-management or device-clock coupling before enabling sustained general playback.
-No adaptive resampling or long-duration playback claim is made here.
+Buffering alone cannot absorb this indefinitely. An adaptive PCM rate matcher has
+since been implemented and tested for 15 simulated minutes plus a bounded live
+PCM run; see [RATE-MATCHING.md](RATE-MATCHING.md). Long-duration hardware settling
+and production full-band conversion quality are still unverified.
 
 The compatibility MIDI bridge and native audio process still cannot share USB
 interface 0. Combined controller/audio ownership, KORE input PCM capture and a

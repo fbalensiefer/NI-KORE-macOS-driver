@@ -35,3 +35,11 @@ Prior development occurred as standalone `kore-midi-v3` through `v9` prototypes 
 - Build and test a local signed AudioServerPlugIn output bundle and capped native
   PCM feed; leave it uninstalled per user instruction. Sustained drift handling
   and actual CoreAudio host integration are still pending.
+
+### Follow-up: adaptive rate-matching prototype
+
+- Add bounded PCM interpolation and occupancy control, startup calibration, fades
+  and starvation recovery without changing USB packet lengths/timing.
+- Verify 15 simulated minutes over +/-500 ppm and a capped host-paced PCM hardware
+  test with gap-free capture. Keep CoreAudio uninstalled and distinguish these
+  results from sustained hardware clock lock or full-band audio quality.

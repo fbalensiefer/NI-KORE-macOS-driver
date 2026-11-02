@@ -118,7 +118,7 @@ static OSStatus get(AudioServerPlugInDriverRef d,AudioObjectID id,pid_t pid,cons
         case kAudioDevicePropertyNominalSampleRate:*(Float64 *)data=48000;return 0;
         case kAudioDevicePropertyAvailableNominalSampleRates:*(AudioValueRange *)data=(AudioValueRange){48000,48000};return 0;
         case kAudioDevicePropertyLatency:value=1536;break;
-        case kAudioDevicePropertySafetyOffset:value=512;break;
+        case kAudioDevicePropertySafetyOffset:value=2048;break;
         case kAudioDevicePropertyZeroTimeStampPeriod:value=512;break;
         case kAudioDevicePropertyPreferredChannelsForStereo:((UInt32 *)data)[0]=1;((UInt32 *)data)[1]=2;return 0;
         case kAudioStreamPropertyIsActive:value=1;break;

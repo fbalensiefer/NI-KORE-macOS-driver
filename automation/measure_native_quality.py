@@ -39,7 +39,7 @@ def measure(wav,timing,driver_log=None):
    batches,transport_bytes=map(int,match.groups());duration=batches/1000
    inferred=transport_bytes/16/duration
    result.update({'usb_payload_inferred_rate':inferred,'usb_payload_relative_host_ppm':(inferred/48000-1)*1e6,
-                  'usb_payload_predicted_tone_hz':440*inferred/48000,
+                  'usb_payload_predicted_tone_hz_without_resampling':440*inferred/48000,
                   'usb_packet_quantization_ppm':11/(48000*duration)*1e6})
  return result
 if __name__=='__main__':

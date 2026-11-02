@@ -9,9 +9,10 @@ See [capture/clock evidence](CAPTURE-CONTINUITY.md).
    PCM property IPC, realtime-safe queue, native prefetch/packer and render client
    build and pass offline tests. Real HAL loading and application compatibility
    remain unverified; installation requires fresh approval.
-2. **Implement drift handling before sustained app playback.** The current virtual
-   device follows nominal 48 kHz host time; KORE payload timing differs slightly.
-   Bounded three-second tests do not establish indefinite clock matching.
+2. **Validate the implemented adaptive rate matcher before sustained playback.**
+   It passes 15 simulated minutes and a bounded hardware PCM run. The current
+   linear interpolator needs full-band DSP evaluation; three-second live tests
+   do not establish long-duration clock lock. See [rate matching](RATE-MATCHING.md).
 3. **Improve analog measurement SNR.** At the authorized low level, residual noise
    is about 6 dB above tone RMS. Do not infer a DAC distortion/dynamic-range spec
    from that measurement or automatically alter physical gain.

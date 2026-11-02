@@ -80,6 +80,7 @@ playback, and current recordings do not establish production audio quality.
 - [Linux parity, legacy submission failure and investigation](docs/AUDIO-VALIDATION.md)
 - [Gap-free capture and clock measurements](docs/CAPTURE-CONTINUITY.md)
 - [Local CoreAudio output prototype](docs/COREAUDIO-PROTOTYPE.md)
+- [Adaptive rate matching and its limits](docs/RATE-MATCHING.md)
 - [Next development steps](docs/NEXT-STEPS.md)
 - `audio/`: shared framing, native IOUSBHost transport, discovery and capped tone generator.
 - `src/`: controller bridge; `tests/` and `automation/`: offline checks and explicit hardware tools.

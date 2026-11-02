@@ -39,7 +39,7 @@ audio-check: audio build/test-caiaq
 .PHONY: native-probe
 native-probe: build/kore1-native-probe
 
-build/kore1-native-probe: audio/native_probe.m audio/native_plan.h audio/native_discovery.h audio/tone.h audio/caiaq.h coreaudio/pcm_source.h coreaudio/pcm_ring.h coreaudio/client.h
+build/kore1-native-probe: audio/native_probe.m audio/native_plan.h audio/native_discovery.h audio/tone.h audio/caiaq.h coreaudio/pcm_source.h coreaudio/rate_match.h coreaudio/pcm_ring.h coreaudio/client.h
 	@mkdir -p build
 	$(CC) -std=c11 -Wall -Wextra -Werror -O2 -fobjc-arc -fblocks -mmacosx-version-min=12.0 -o $@ $< -framework Foundation -framework CoreAudio -framework IOKit -framework IOUSBHost
 
@@ -48,7 +48,7 @@ build/test-native-plan: tests/test_native_plan.c audio/native_plan.h audio/caiaq
 	@mkdir -p build
 	$(CC) -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined -o $@ $<
 
-build/test-native-transport: tests/test_native_transport.m audio/native_probe.m audio/native_plan.h audio/native_discovery.h audio/tone.h audio/caiaq.h coreaudio/pcm_source.h coreaudio/pcm_ring.h coreaudio/client.h
+build/test-native-transport: tests/test_native_transport.m audio/native_probe.m audio/native_plan.h audio/native_discovery.h audio/tone.h audio/caiaq.h coreaudio/pcm_source.h coreaudio/rate_match.h coreaudio/pcm_ring.h coreaudio/client.h
 	@mkdir -p build
 	$(CC) -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined -fobjc-arc -fblocks -mmacosx-version-min=12.0 -o $@ $< -framework Foundation -framework CoreAudio -framework IOKit -framework IOUSBHost
 
@@ -61,11 +61,11 @@ native-check: native-probe build/test-native-plan build/test-native-transport bu
 	./build/test-native-tone
 	python3 automation/test_native_analyzer.py
 
-build/test-native-stream: tests/test_native_stream.m audio/native_probe.m audio/native_plan.h audio/native_discovery.h audio/tone.h audio/caiaq.h coreaudio/pcm_source.h coreaudio/pcm_ring.h coreaudio/client.h
+build/test-native-stream: tests/test_native_stream.m audio/native_probe.m audio/native_plan.h audio/native_discovery.h audio/tone.h audio/caiaq.h coreaudio/pcm_source.h coreaudio/rate_match.h coreaudio/pcm_ring.h coreaudio/client.h
 	@mkdir -p build
 	$(CC) -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined -fobjc-arc -fblocks -mmacosx-version-min=12.0 -o $@ $< -framework Foundation -framework CoreAudio -framework IOKit -framework IOUSBHost
 
-build/test-native-tone: tests/test_native_tone.c audio/tone.h audio/caiaq.h coreaudio/pcm_source.h coreaudio/pcm_ring.h coreaudio/client.h
+build/test-native-tone: tests/test_native_tone.c audio/tone.h audio/caiaq.h coreaudio/pcm_source.h coreaudio/rate_match.h coreaudio/pcm_ring.h coreaudio/client.h
 	@mkdir -p build
 	$(CC) -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined -o $@ $< -lm
 
@@ -87,10 +87,11 @@ build/KoreAudio.driver/Contents/MacOS/KoreAudio: coreaudio/plugin.c coreaudio/pc
 build/test-hal-capture: tests/test_hal_capture.m coreaudio/capture.m
 	@mkdir -p build
 	$(CC) -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined -fobjc-arc -o $@ $< -framework Foundation -framework CoreAudio
-build/test-coreaudio-plugin: tests/test_coreaudio_plugin.c coreaudio/plugin.c coreaudio/pcm_ring.h coreaudio/pcm_source.h
+build/test-coreaudio-plugin: tests/test_coreaudio_plugin.c coreaudio/plugin.c coreaudio/pcm_ring.h coreaudio/pcm_source.h coreaudio/rate_match.h
 	@mkdir -p build
 	$(CC) -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined -o $@ $< -framework CoreAudio -framework CoreFoundation -lpthread
-coreaudio-check: hal-capture coreaudio-prototype build/kore-coreaudio-render build/test-hal-capture build/test-coreaudio-plugin build/test-coreaudio-bundle
+coreaudio-check: build/test-rate-match hal-capture coreaudio-prototype build/kore-coreaudio-render build/test-hal-capture build/test-coreaudio-plugin build/test-coreaudio-bundle
+	./build/test-rate-match
 	./build/test-hal-capture
 	./build/test-coreaudio-plugin
 	./build/test-coreaudio-bundle
@@ -103,3 +104,7 @@ build/kore-coreaudio-render: coreaudio/render_test.m coreaudio/client.h coreaudi
 build/test-coreaudio-bundle: tests/test_coreaudio_bundle.m
 	@mkdir -p build
 	$(CC) -std=c11 -Wall -Wextra -Werror -O2 -fobjc-arc -o $@ $< -framework Foundation -framework CoreAudio
+
+build/test-rate-match: tests/test_rate_match.c coreaudio/rate_match.h coreaudio/pcm_ring.h
+	@mkdir -p build
+	$(CC) -std=c11 -Wall -Wextra -Werror -O2 -g -fsanitize=address,undefined -o $@ $< -lm
