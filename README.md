@@ -20,8 +20,8 @@ qualification are not implemented.
 
 The stereo headphone path has now been recorded with independent 440/660Hz
 left/right signals and a dual-channel window. Both channels were detected with
-continuous capture; final installation encountered a CoreAudio initialization
-block requiring a Mac restart and revalidation; see [stereo results and remaining measurement limits](docs/STEREO-OUTPUT-RESULTS.md).
+continuous capture. After a Mac restart, the installed four-channel Main path
+passed a ten-second loopback test; USB scheduling restarts remain unresolved; see [stereo results and remaining measurement limits](docs/STEREO-OUTPUT-RESULTS.md).
 
 ## Build, install and run
 
