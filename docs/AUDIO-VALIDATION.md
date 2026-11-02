@@ -1,0 +1,180 @@
+# Audio validation milestone — 2026-11-02
+
+## Build and offline verification
+
+On macOS with Xcode command line tools, pkg-config and libusb already installed:
+
+```sh
+make audio
+make check audio-check
+```
+
+The new target is `build/kore1-bridge-audio`, built from `kore1-bridge-audio.c`
+with C11, warnings as errors. `audio/caiaq.h` is the shared framing and layout
+implementation. `audio-check` runs production C functions and callbacks under
+AddressSanitizer and UndefinedBehaviorSanitizer. No USB, MIDI or capture device
+is opened by tests. Tests link the existing macOS frameworks and libusb.
+
+## Audit and baseline
+
+Inspected root C variants, src controller bridge, build scripts, documentation,
+Python tests, automation, historical backup snapshots, archive inventory and Git
+history through cb8c298. No AGENTS.md was present. The RX-matched source adds
+zero descriptor preservation to the single176 variant; it includes the 96-byte,
+FIFO, RX-paced, single-channel and sweep experiments. This feature comparison,
+not the filename version, selected it as the baseline. It compiled locally with
+five unused-code warnings before changes. The new target compiles without warnings.
+
+Existing root `kore1-bridge.c` and README had user changes; there were numerous
+untracked experiments and analog recordings. They were preserved. The working
+MIDI/LED/LCD implementation and default build remain separate. The new bridge
+copies that existing implementation; no controller algorithm was redesigned.
+The existing Makefile's check target silently skipped misplaced repository tests.
+Paths were corrected. The old patch test expected an obsolete seven-byte command;
+it now tests its historical patch fixture and verifies that the six-byte command
+is preserved. No historical patch utility or experimental evidence was removed.
+
+## Authoritative comparison
+
+Pinned references (read source, not secondary descriptions):
+
+- [Linux v6.12 audio.c](https://github.com/torvalds/linux/blob/v6.12/sound/usb/caiaq/audio.c)
+- [Linux v6.12 device.c](https://github.com/torvalds/linux/blob/v6.12/sound/usb/caiaq/device.c)
+- [Linux v6.12 control.c](https://github.com/torvalds/linux/blob/v6.12/sound/usb/caiaq/control.c)
+- [libusb v1.0.30 Darwin backend](https://github.com/libusb/libusb/blob/v1.0.30/libusb/os/darwin_usb.c)
+- [libusb v1.0.30 transfer core](https://github.com/libusb/libusb/blob/v1.0.30/libusb/io.c)
+- [Apple WriteIsochPipeAsync](https://developer.apple.com/documentation/iokit/iousbinterfaceinterface192/1559174-writeisochpipeasync)
+
+Installed libusb is 1.0.30, arm64 Homebrew bottle. Linux v6.12 is a pinned
+reference, not a claim about the latest kernel. It uses device.h/audio.h naming.
+
+Verified Linux facts: mode 0 emits one PCM byte per stream, inserts checkbytes
+after four PCM bytes, and resets check phase each packet. PCM is S24_3BE;
+per-stream cursors persist. pcm_prepare initializes playback cursor to byte 4;
+the new bridge uses that initial offset too. stream_start arms 32 IN URBs.
+read_completed retains successful zero lengths, fills nonempty OUT packets and
+submits only when some payload exists. Failed-IN handling in that reference uses
+separate frame/outframe indices; the bridge instead skips a whole errored batch.
+The KORE startup switch has no DAC-specific command; its control table lists LEDs,
+not DAC volume, headphone enable or routing. This does not prove hardware state.
+
+| Area | Earlier bridge | New target |
+| --- | --- | --- |
+| Handshake | `09 01 02 B0 00 01` | Preserved; ACK required |
+| Framing | Inlined Linux-style loop | Shared validated packer, independent byte-vector tests |
+| Initial PCM cursor | 0 | 4, matching Linux prepare |
+| Fixed96 silence | Required tone or FIFO | Explicit `--audio-fixed96-silence` |
+| RX mixed packets | Retried submit failures continuously | Preserve zeros; validate full layout; stop on first failure |
+| Failed IN descriptor | Could be replaced by zero | Stop IN error; never infer timing from failed descriptors |
+| Completion error | Could continue playing | Stop and return failure |
+| Shutdown timeout | Could close context with callbacks pending | Retain live USB objects until process exit, return failure |
+| Tone | Stereo default; legacy rate compensation | Selected channel, 48k phase, configurable capped amplitude |
+| Duration | Open-ended | All ISO diagnostic modes default to 5s, range 100..30000ms |
+
+Linux's ALSA prepare/trigger and capture panic tracking are not fully ported.
+The new bridge is a diagnostic transport, not a completed ALSA/CoreAudio port.
+It does not decode input PCM or the alignment-2 IN panic bits. The old
+"Linux PCM threshold" log was incorrect: bpp is not a decoder threshold.
+
+## INVALID_PARAM investigation
+
+**Verified:** the historical mixed transfer sums lengths correctly and compacts
+its buffer. For 0/176 lengths, every packet fits the reported 512-byte endpoint
+capacity. libusb's transfer core does not reject zeros; Darwin copies each length
+to frReqCount and calls WriteIsochPipeAsync. It translates kIOReturnBadArgument
+into LIBUSB_ERROR_INVALID_PARAM. Darwin schedules at least four bus frames ahead
+and advances its per-endpoint scheduling cursor even when native submission fails.
+
+**Offline result:** all 255 nonempty 8-packet 0/176 patterns pass the new layout
+checks and the production scheduler mock. An all-zero batch is skipped. Busy
+slots cannot be reused; rejected submissions release ownership and stop. These
+tests do not execute IOKit and cannot demonstrate native zero-packet support.
+
+**Unresolved:** no native error trace from the historical failures is available.
+Zero lengths, scheduling horizon, host-controller/IOKit constraints and endpoint
+state are not distinguishable from the old error alone. It would be unsupported
+to claim the root cause is fixed or that macOS rejects all zero-length packets.
+Repeated failed submissions could compound a scheduling-horizon problem because
+of the backend cursor behavior; this is a hypothesis, not the established cause.
+The new failure log records the exact eight lengths and total and stops immediately.
+Use LIBUSB_DEBUG=4 in a separately authorized hardware run to capture the native
+backend error. No zero descriptors are padded or discarded to hide the problem.
+
+## Packing arithmetic and previous recordings
+
+96 bytes carry 36 PCM bytes per stream: six stereo frames. 176 carry 66: eleven
+frames. At 8000 packets/s this means 48000 vs 88000 frames/s. This is mathematical
+transport capacity, not a playback test. The observed 0/176 ratio can average
+48000 frames/s; why the firmware chooses that pattern remains unverified.
+The README-single176 calculation of 44 PCM bytes per stream was incorrect;
+no phase compensation based on that calculation is used in the new target.
+
+The MAYA44 phone recording established that the recording input works. It did
+not demonstrate KORE output. Previous KORE silence measurements, physical output
+mapping, cable configuration, headphone knob/mute state and DAC function remain
+hardware questions. Successful USB completions do not establish audible output.
+
+## Explicit modes and safe commands
+
+Offline option validation (safe to run without hardware):
+
+```sh
+./build/kore1-bridge-audio --audio-fixed96-silence --dry-run
+```
+
+The following commands access hardware. They were **prepared, not executed**.
+Run one bridge process only. For initial OUT diagnostics disconnect speakers and
+headphones and set output gain to minimum. Even encoded silence cannot guarantee
+physical silence if the device interprets the protocol differently.
+
+Initialization only, no ISO IN or OUT:
+
+```sh
+./build/kore1-bridge-audio --audio-init-only
+```
+
+ISO IN monitoring only (no audio file capture, no OUT):
+
+```sh
+./build/kore1-bridge-audio --audio-init --audio-linux-urbs --audio-duration-ms 3000
+```
+
+Recommended first OUT test, fixed96 encoded silence, automatic 3s stop:
+
+```sh
+./build/kore1-bridge-audio --audio-fixed96-silence --audio-duration-ms 3000 --audio-linux-trace
+```
+
+RX-synchronized encoded silence with zeros preserved, automatic 3s stop:
+
+```sh
+LIBUSB_DEBUG=4 ./build/kore1-bridge-audio --audio-rx-matched-zero --audio-linux-urbs --audio-duration-ms 3000
+```
+
+Do not proceed to tone after an error. For a later separately authorized analog
+test, `--headphone-tone --audio-out-96 --audio-tone-channel 1` selects one logical
+channel, with 1s silence, 1.2s tone, then silence. Select 1..4 individually; these
+are logical stream/channel indices, not verified physical jack assignments.
+`--audio-max-amplitude` defaults to .00025 (about -72 dBFS), cannot exceed .001
+(-60 dBFS), and applies to FIFO too. Legacy sweeps remain opt-in, bounded and
+capped; they are not the next recommended test. A cap is not a physical SPL limit.
+The legacy pattern flag is a tone alias; it does not implement the old advertised
+440/880 sequence. The HP sample counter now counts generated channel samples.
+
+## Verification performed and remaining work
+
+`make check audio-check` passed locally. The C suite verifies literal silence
+and signed24 vectors, independent stream markers, 96/176/variable packet lengths,
+zero and mixed layouts, capacity checks, packet-local check phase, continuous
+440Hz for each logical channel, amplitude bounds, busy-slot ownership, cancellation
+callback release, injected submission failure and invalid RX lengths under ASan/UBSan.
+The CLI suite verifies 14 cases using --dry-run. Existing audio patch assertions,
+RX model, C payload extraction, PCM models and synthetic recording analyzer passed.
+No physical USB access, playback, recording or system modification was performed.
+
+Native IOKit compatibility, queue timing, device-disconnect/shutdown behavior and
+analog output require hardware verification. FIFO partial-frame underflow behavior
+is inherited and not certified for DAW playback. No CoreAudio device was installed
+or implemented; choose its architecture only after an analog recording verifies
+raw playback. This milestone improves validation and failure behavior; it does
+not yet satisfy the ultimate reliable playback objective.

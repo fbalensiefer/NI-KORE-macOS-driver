@@ -46,3 +46,12 @@ Read **[docs/AUDIO-FINDINGS.md](docs/AUDIO-FINDINGS.md)** for measured USB descr
 ## References and licensing
 
 Primary behavioral references: [Linux CAIAQ audio.c](https://github.com/torvalds/linux/blob/master/sound/usb/caiaq/audio.c) and [device.c](https://github.com/torvalds/linux/blob/master/sound/usb/caiaq/device.c). Respect the licenses of any adapted third-party source; review original attribution before redistributing code. This documentation distinguishes observed measurements from hypotheses.
+
+## Validated audio diagnostic target
+
+Build and run hardware-free checks with `make audio check audio-check`. The new
+`build/kore1-bridge-audio` preserves the existing controller implementation and
+adds bounded fixed-96 silence, validated PCM/ISO layouts and failure diagnostics.
+See [protocol findings and safe hardware commands](docs/AUDIO-VALIDATION.md).
+Hardware playback and the cause of intermittent IOKit submission failures remain
+unverified. No hardware test is started by the build or checks.
