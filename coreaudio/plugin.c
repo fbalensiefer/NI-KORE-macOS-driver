@@ -10,8 +10,11 @@
 #include <signal.h>
 #include <errno.h>
 #include <math.h>
+#include <os/log.h>
 #include <string.h>
 #include "pcm_ring.h"
+#define KORE_CLOCK_PERIOD 16384u
+#define KORE_BOX 4u
 #define KORE_DEVICE 2u
 #define KORE_STREAM 3u
 #define KORE_PULL 'kpcm'
@@ -43,14 +46,20 @@ static OSStatus create(AudioServerPlugInDriverRef d,CFDictionaryRef desc,const A
 static OSStatus destroy(AudioServerPlugInDriverRef d,AudioObjectID id){(void)d;(void)id;return kAudioHardwareUnsupportedOperationError;}
 static OSStatus client(AudioServerPlugInDriverRef d,AudioObjectID id,const AudioServerPlugInClientInfo *c){(void)c;return d==driverRef && id==KORE_DEVICE?0:kAudioHardwareBadObjectError;}
 static OSStatus config(AudioServerPlugInDriverRef d,AudioObjectID id,UInt64 action,void *info){(void)action;(void)info;return d==driverRef && id==KORE_DEVICE?0:kAudioHardwareBadObjectError;}
-static Boolean valid_object(AudioObjectID id){return id==kAudioObjectPlugInObject || id==KORE_DEVICE || id==KORE_STREAM;}
+static Boolean valid_object(AudioObjectID id){return id==kAudioObjectPlugInObject || id==KORE_DEVICE || id==KORE_STREAM || id==KORE_BOX;}
 static Boolean has(AudioServerPlugInDriverRef d,AudioObjectID id,pid_t pid,const AudioObjectPropertyAddress *a) {
     (void)pid;if(d!=driverRef || !a || !valid_object(id))return false;
     switch(a->mSelector) {
         case kAudioObjectPropertyBaseClass:case kAudioObjectPropertyClass:case kAudioObjectPropertyOwner:
-        case kAudioObjectPropertyName:case kAudioObjectPropertyManufacturer:case kAudioObjectPropertyOwnedObjects:return true;
+        case kAudioObjectPropertyModelName:case kAudioObjectPropertyName:case kAudioObjectPropertyManufacturer:case kAudioObjectPropertyOwnedObjects:return true;
     }
-    if(id==kAudioObjectPlugInObject)switch(a->mSelector){case kAudioPlugInPropertyDeviceList:case kAudioPlugInPropertyTranslateUIDToDevice:case kAudioPlugInPropertyBundleID:return true;}
+    if(id==kAudioObjectPlugInObject)switch(a->mSelector){case kAudioPlugInPropertyDeviceList:case kAudioPlugInPropertyTranslateUIDToDevice:case kAudioPlugInPropertyBundleID:case kAudioPlugInPropertyBoxList:case kAudioPlugInPropertyTranslateUIDToBox:case kAudioPlugInPropertyResourceBundle:return true;}
+    if(id==KORE_BOX)switch(a->mSelector) {
+        case kAudioBoxPropertyBoxUID:case kAudioBoxPropertyTransportType:case kAudioBoxPropertyHasAudio:
+        case kAudioBoxPropertyHasVideo:case kAudioBoxPropertyHasMIDI:case kAudioBoxPropertyIsProtected:
+        case kAudioBoxPropertyAcquired:case kAudioBoxPropertyAcquisitionFailed:case kAudioBoxPropertyDeviceList:
+        case kAudioBoxPropertyClockDeviceList:return true;
+    }
     if(id==KORE_DEVICE)switch(a->mSelector) {
         case kAudioObjectPropertyCustomPropertyInfoList:case KORE_PULL:case KORE_LEASE:
         case kAudioDevicePropertyDeviceUID:case kAudioDevicePropertyModelUID:case kAudioDevicePropertyTransportType:
@@ -58,6 +67,7 @@ static Boolean has(AudioServerPlugInDriverRef d,AudioObjectID id,pid_t pid,const
         case kAudioDevicePropertyDeviceIsRunning:case kAudioDevicePropertyDeviceCanBeDefaultDevice:case kAudioDevicePropertyDeviceCanBeDefaultSystemDevice:
         case kAudioDevicePropertyLatency:case kAudioDevicePropertySafetyOffset:case kAudioDevicePropertyStreams:
         case kAudioObjectPropertyControlList:case kAudioDevicePropertyNominalSampleRate:case kAudioDevicePropertyAvailableNominalSampleRates:
+        case kAudioDevicePropertyClockAlgorithm:case kAudioDevicePropertyClockIsStable:case kAudioDevicePropertyIsHidden:
         case kAudioDevicePropertyZeroTimeStampPeriod:case kAudioDevicePropertyPreferredChannelsForStereo:return true;
     }
     if(id==KORE_STREAM)switch(a->mSelector) {
@@ -65,6 +75,8 @@ static Boolean has(AudioServerPlugInDriverRef d,AudioObjectID id,pid_t pid,const
         case kAudioStreamPropertyStartingChannel:case kAudioStreamPropertyLatency:case kAudioStreamPropertyVirtualFormat:
         case kAudioStreamPropertyPhysicalFormat:case kAudioStreamPropertyAvailableVirtualFormats:case kAudioStreamPropertyAvailablePhysicalFormats:return true;
     }
+    static _Atomic unsigned unknown;
+    if(atomic_fetch_add(&unknown,1)<128)os_log(OS_LOG_DEFAULT,"KORE HAL unsupported object=%u selector=%08x scope=%08x",id,a->mSelector,a->mScope);
     return false;
 }
 static OSStatus settable(AudioServerPlugInDriverRef d,AudioObjectID id,pid_t pid,const AudioObjectPropertyAddress *a,Boolean *out) {
@@ -73,10 +85,11 @@ static OSStatus settable(AudioServerPlugInDriverRef d,AudioObjectID id,pid_t pid
 }
 static UInt32 property_size(AudioObjectID id,const AudioObjectPropertyAddress *a) {
     switch(a->mSelector) {
-        case kAudioObjectPropertyName:case kAudioObjectPropertyManufacturer:case kAudioPlugInPropertyBundleID:
-        case kAudioDevicePropertyDeviceUID:case kAudioDevicePropertyModelUID:case KORE_PULL:case KORE_LEASE:return sizeof(CFTypeRef);
-        case kAudioObjectPropertyOwnedObjects:return id==KORE_STREAM || (id==KORE_DEVICE && a->mScope==kAudioObjectPropertyScopeInput)?0:sizeof(AudioObjectID);
-        case kAudioPlugInPropertyDeviceList:case kAudioDevicePropertyRelatedDevices:return sizeof(AudioObjectID);
+        case kAudioPlugInPropertyResourceBundle:case kAudioObjectPropertyModelName:case kAudioObjectPropertyName:case kAudioObjectPropertyManufacturer:case kAudioPlugInPropertyBundleID:
+        case kAudioDevicePropertyDeviceUID:case kAudioDevicePropertyModelUID:case kAudioBoxPropertyBoxUID:case KORE_PULL:case KORE_LEASE:return sizeof(CFTypeRef);
+        case kAudioObjectPropertyOwnedObjects:return id==kAudioObjectPlugInObject?2*sizeof(AudioObjectID):id==KORE_BOX || id==KORE_STREAM || (id==KORE_DEVICE && a->mScope==kAudioObjectPropertyScopeInput)?0:sizeof(AudioObjectID);
+        case kAudioBoxPropertyClockDeviceList:return 0;
+        case kAudioPlugInPropertyBoxList:case kAudioBoxPropertyDeviceList:case kAudioPlugInPropertyDeviceList:case kAudioDevicePropertyRelatedDevices:return sizeof(AudioObjectID);
         case kAudioDevicePropertyStreams:return a->mScope==kAudioObjectPropertyScopeInput?0:sizeof(AudioObjectID);
         case kAudioObjectPropertyControlList:return 0;
         case kAudioDevicePropertyNominalSampleRate:return sizeof(Float64);
@@ -92,23 +105,30 @@ static OSStatus get_size(AudioServerPlugInDriverRef d,AudioObjectID id,pid_t pid
     (void)qs;(void)q;if(!out || !has(d,id,pid,a))return kAudioHardwareUnknownPropertyError;*out=property_size(id,a);return 0;
 }
 static OSStatus get(AudioServerPlugInDriverRef d,AudioObjectID id,pid_t pid,const AudioObjectPropertyAddress *a,UInt32 qs,const void *q,UInt32 capacity,UInt32 *out,void *data) {
-    if(!out || !has(d,id,pid,a))return kAudioHardwareUnknownPropertyError;
+    if(!out || !has(d,id,pid,a)){if(a)os_log(OS_LOG_DEFAULT,"KORE HAL failed GET object=%u selector=%08x",id,a->mSelector);return kAudioHardwareUnknownPropertyError;}
     UInt32 size=property_size(id,a);if(capacity<size || (size && !data))return kAudioHardwareBadPropertySizeError;*out=size;
     UInt32 value=0;CFStringRef string=NULL;
     switch(a->mSelector) {
         case kAudioObjectPropertyBaseClass:value=kAudioObjectClassID;break;
-        case kAudioObjectPropertyClass:value=id==kAudioObjectPlugInObject?kAudioPlugInClassID:id==KORE_DEVICE?kAudioDeviceClassID:kAudioStreamClassID;break;
-        case kAudioObjectPropertyOwner:value=id==kAudioObjectPlugInObject?kAudioObjectUnknown:id==KORE_DEVICE?kAudioObjectPlugInObject:KORE_DEVICE;break;
+        case kAudioObjectPropertyClass:value=id==kAudioObjectPlugInObject?kAudioPlugInClassID:id==KORE_DEVICE?kAudioDeviceClassID:id==KORE_BOX?kAudioBoxClassID:kAudioStreamClassID;break;
+        case kAudioObjectPropertyOwner:value=id==kAudioObjectPlugInObject?kAudioObjectUnknown:(id==KORE_DEVICE || id==KORE_BOX)?kAudioObjectPlugInObject:KORE_DEVICE;break;
+        case kAudioObjectPropertyModelName:string=CFSTR("KORE 1 Native Output");break;
         case kAudioObjectPropertyName:string=id==KORE_DEVICE?CFSTR("KORE 1 Experimental Output"):CFSTR("KORE 1 Native Bridge");break;
         case kAudioObjectPropertyManufacturer:string=CFSTR("NI-KORE open-source project");break;
+        case kAudioPlugInPropertyResourceBundle:string=CFSTR("");break;
         case kAudioPlugInPropertyBundleID:string=CFSTR("org.nikore.experimental.driver");break;
         case kAudioDevicePropertyDeviceUID:string=KORE_UID;break;
+        case kAudioBoxPropertyBoxUID:string=CFSTR("org.nikore.experimental.box");break;
         case kAudioDevicePropertyModelUID:string=CFSTR("org.nikore.experimental.model");break;
-        case kAudioObjectPropertyOwnedObjects:if(!size)return 0;value=id==KORE_DEVICE?KORE_STREAM:KORE_DEVICE;break;
-        case kAudioPlugInPropertyDeviceList:case kAudioDevicePropertyRelatedDevices:value=KORE_DEVICE;break;
-        case kAudioPlugInPropertyTranslateUIDToDevice:
+        case kAudioObjectPropertyOwnedObjects:if(!size)return 0;if(id==kAudioObjectPlugInObject){AudioObjectID objects[2]={KORE_BOX,KORE_DEVICE};memcpy(data,objects,sizeof(objects));return 0;}value=id==KORE_DEVICE?KORE_STREAM:KORE_DEVICE;break;
+        case kAudioPlugInPropertyBoxList:value=KORE_BOX;break;
+        case kAudioBoxPropertyClockDeviceList:return 0;
+        case kAudioBoxPropertyHasAudio:case kAudioBoxPropertyAcquired:value=1;break;
+        case kAudioBoxPropertyHasVideo:case kAudioBoxPropertyHasMIDI:case kAudioBoxPropertyIsProtected:case kAudioBoxPropertyAcquisitionFailed:value=0;break;
+        case kAudioBoxPropertyDeviceList:case kAudioPlugInPropertyDeviceList:case kAudioDevicePropertyRelatedDevices:value=KORE_DEVICE;break;
+        case kAudioPlugInPropertyTranslateUIDToBox:case kAudioPlugInPropertyTranslateUIDToDevice:
             if(qs!=sizeof(CFStringRef) || !q || !*(CFStringRef const *)q || CFGetTypeID(*(CFTypeRef const *)q)!=CFStringGetTypeID())return kAudioHardwareBadPropertySizeError;
-            value=CFEqual(*(CFStringRef const *)q,KORE_UID)?KORE_DEVICE:kAudioObjectUnknown;break;
+            value=a->mSelector==kAudioPlugInPropertyTranslateUIDToBox?(CFEqual(*(CFStringRef const *)q,CFSTR("org.nikore.experimental.box"))?KORE_BOX:kAudioObjectUnknown):(CFEqual(*(CFStringRef const *)q,KORE_UID)?KORE_DEVICE:kAudioObjectUnknown);break;
         case kAudioDevicePropertyTransportType:value=kAudioDeviceTransportTypeVirtual;break;
         case kAudioDevicePropertyDeviceIsAlive:value=1;break;
         case kAudioDevicePropertyDeviceIsRunning:value=atomic_load(&running)>0;break;
@@ -117,9 +137,12 @@ static OSStatus get(AudioServerPlugInDriverRef d,AudioObjectID id,pid_t pid,cons
         case kAudioObjectPropertyControlList:return 0;
         case kAudioDevicePropertyNominalSampleRate:*(Float64 *)data=48000;return 0;
         case kAudioDevicePropertyAvailableNominalSampleRates:*(AudioValueRange *)data=(AudioValueRange){48000,48000};return 0;
-        case kAudioDevicePropertyLatency:value=1536;break;
+        case kAudioDevicePropertyLatency:value=6144;break;
         case kAudioDevicePropertySafetyOffset:value=2048;break;
-        case kAudioDevicePropertyZeroTimeStampPeriod:value=512;break;
+        case kAudioDevicePropertyClockAlgorithm:value=kAudioDeviceClockAlgorithmRaw;break;
+        case kAudioDevicePropertyClockIsStable:value=1;break;
+        case kAudioDevicePropertyIsHidden:value=0;break;
+        case kAudioDevicePropertyZeroTimeStampPeriod:value=KORE_CLOCK_PERIOD;break;
         case kAudioDevicePropertyPreferredChannelsForStereo:((UInt32 *)data)[0]=1;((UInt32 *)data)[1]=2;return 0;
         case kAudioStreamPropertyIsActive:value=1;break;
         case kAudioStreamPropertyDirection:value=0;break;
@@ -167,7 +190,7 @@ static OSStatus timestamp(AudioServerPlugInDriverRef d,AudioObjectID id,UInt32 c
     (void)clientID;if(d!=driverRef || id!=KORE_DEVICE || !sample || !host || !seed)return kAudioHardwareBadObjectError;
     uint64_t begin=atomic_load(&anchor);uint64_t now=AudioGetCurrentHostTime();
     double frames=begin?AudioConvertHostTimeToNanos(now-begin)*48000./1e9:0;
-    uint64_t period=(uint64_t)(frames/512);*sample=period*512;*host=begin+AudioConvertNanosToHostTime((uint64_t)(period*512*1e9/48000));*seed=atomic_load(&clockSeed);return 0;
+    uint64_t period=(uint64_t)(frames/KORE_CLOCK_PERIOD);*sample=period*KORE_CLOCK_PERIOD;*host=begin+AudioConvertNanosToHostTime((uint64_t)(period*KORE_CLOCK_PERIOD*1e9/48000));*seed=atomic_load(&clockSeed);return 0;
 }
 static OSStatus will(AudioServerPlugInDriverRef d,AudioObjectID id,UInt32 clientID,UInt32 operation,Boolean *yes,Boolean *inPlace) {
     (void)clientID;if(d!=driverRef || id!=KORE_DEVICE || !yes || !inPlace)return kAudioHardwareBadObjectError;

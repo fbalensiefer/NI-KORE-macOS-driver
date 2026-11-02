@@ -3,7 +3,7 @@
 #include "../audio/native_probe.m"
 #undef main
 #include <assert.h>
-@interface MockFrameClock : NSObject { @public uint64_t now; }
+@interface MockFrameClock : NSObject { @public uint64_t now;unsigned delay; }
 @end
 @implementation MockFrameClock
 - (uint64_t)frameNumberWithTime:(IOUSBHostTime *)time {(void)time;return now;}
@@ -42,7 +42,7 @@
     for(MockRequest *request in pending)assert(request->list!=list); /* no live buffer reuse */
     if(reject) {*error=[NSError errorWithDomain:IOUSBHostErrorDomain code:kIOReturnBadArgument userInfo:nil];return NO;}
     MockRequest *request=[MockRequest new];request->data=data;request->list=list;request->callback=callback;request->frame=first;
-    [pending addObject:request];assert(pending.count<=64);return YES;
+    [pending addObject:request];assert(pending.count<=256);return YES;
 }
 - (BOOL)abortWithOption:(IOUSBHostAbortOption)option error:(NSError **)error {
     (void)error;assert(option==IOUSBHostAbortOptionSynchronous);
@@ -65,7 +65,7 @@ static void completeOut(MockStreamPipe *out,uint64_t now) {
     }
 }
 static void completeIn(MockStreamPipe *in,MockFrameClock *clock,unsigned n) {
-    MockRequest *request=in->pending[0];[in->pending removeObjectAtIndex:0];clock->now=request->frame;
+    MockRequest *request=in->pending[0];[in->pending removeObjectAtIndex:0];clock->now=request->frame+clock->delay;
     for(unsigned i=0;i<8;i++) {
         assert(request->list[i].requestCount==512 && request->list[i].offset==i*512);
         request->list[i].status=kIOReturnUnderrun;
@@ -74,6 +74,25 @@ static void completeIn(MockStreamPipe *in,MockFrameClock *clock,unsigned n) {
     request->callback(kIOReturnSuccess,request->list);
 }
 int main(void) {@autoreleasepool {
+    { /* Continuous service has a larger bounded runway; no deadline timer. */
+        KoreNativeProbe *probe=[KoreNativeProbe new];MockFrameClock *clock=[MockFrameClock new];clock->now=1000;
+        MockStreamPipe *in=[MockStreamPipe new],*out=[MockStreamPipe new];in->input=YES;
+        probe->interface=(IOUSBHostInterface *)clock;probe->isoIn=(IOUSBHostPipe *)in;probe->isoOut=(IOUSBHostPipe *)out;
+        probe->continuous=YES;probe->streamMode=YES;
+        dispatch_sync(probe->queue,^{[probe startStream];});
+        assert(in->pending.count==128 && probe->streamOuts.count==256 && probe->outLeadFrames==128 && !probe->streamTimer);
+        dispatch_sync(probe->queue,^{completeIn(in,clock,0);});
+        assert(out->pending.count==1 && out->pending[0]->frame==clock->now+128);
+        dispatch_sync(probe->queue,^{
+            for(unsigned n=1;n<200;n++) {
+                clock->delay=n>=50?40:0; /* 40ms callback stall exceeds the former runway. */
+                completeOut(out,in->pending[0]->frame+clock->delay);completeIn(in,clock,n);
+                assert(!probe->failed);
+            }
+        });
+        assert(probe->outSubmitted==200 && probe->inCompletedBatches==200);
+        assert([probe stop]);
+    }
     for(int mode=0;mode<3;mode++) {
         KoreNativeProbe *probe=[KoreNativeProbe new];
         MockFrameClock *clock=[MockFrameClock new];clock->now=1000;

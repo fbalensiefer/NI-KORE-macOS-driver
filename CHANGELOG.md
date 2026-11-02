@@ -54,3 +54,15 @@ Prior development occurred as standalone `kore-midi-v3` through `v9` prototypes 
   and disconnect metadata callbacks during shutdown. Preserve original v10 files.
 - Update build/run entry points and document transport exclusivity and unfinished
   CoreAudio integration. Packaging never installs a HAL plug-in or opens USB.
+
+## 2026-11-02 — shared native MIDI/audio and installation implementation
+
+- Replace the generated libusb diagnostic bridge with the native IOUSBHost
+  transport plus preserved controller engine, using one USB interface owner.
+- Isolate ISO, MIDI, LED/LCD and PCM prefetch work; rearm idle controller reads,
+  bound report backlog and drain cancellation callbacks.
+- Build executable and CoreAudio HAL plug-in from one standalone translation unit.
+- Add explicit continuous operation, system install/removal/status, per-user login
+  startup/removal, backup preservation and embedded bundle metadata.
+- Add actual system HAL PCM integration test, final CLI safety checks and native
+  MIDI callback regression tests. Live validation is recorded separately.

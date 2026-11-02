@@ -1,6 +1,10 @@
 # Local CoreAudio output prototype — 2026-11-02
 
-## Current state
+> Historical offline milestone. The later request authorized system installation.
+> See [current native integration and system validation](NATIVE-INTEGRATION-VALIDATION.md)
+> and [installation instructions](DEVELOPMENT-PACKAGE.md).
+
+## State at the offline milestone
 
 An AudioServerPlugIn bundle now builds at `build/KoreAudio.driver`. It is locally
 ad-hoc signed and can be loaded through its actual CFPlugIn factory in an offline

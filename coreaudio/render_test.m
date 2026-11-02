@@ -4,6 +4,7 @@
  */
 #import <Foundation/Foundation.h>
 #import <CoreAudio/CoreAudio.h>
+#import <CoreMIDI/CoreMIDI.h>
 #include <stdatomic.h>
 #include <math.h>
 #include <string.h>
@@ -41,14 +42,35 @@ static OSStatus render(AudioDeviceID id,const AudioTimeStamp *now,const AudioBuf
     }
     r->frames+=frames;if(r->frames>=120000)atomic_store(&r->done,1);return 0;
 }
+static int send_feedback_test(void) {
+    MIDIEndpointRef destination=0;
+    for(ItemCount i=0;i<MIDIGetNumberOfDestinations();i++) {
+        MIDIEndpointRef candidate=MIDIGetDestination(i);CFStringRef name=NULL;
+        if(!MIDIObjectGetStringProperty(candidate,kMIDIPropertyName,&name) && name) {
+            BOOL match=CFEqual(name,CFSTR("KORE 1 Feedback"));CFRelease(name);if(match){destination=candidate;break;}
+        }
+    }
+    if(!destination){fprintf(stderr,"Feedback destination not found\n");return 1;}
+    MIDIClientRef client=0;MIDIPortRef port=0;
+    OSStatus status=MIDIClientCreate(CFSTR("KORE bounded feedback test"),NULL,NULL,&client);
+    if(!status)status=MIDIOutputPortCreate(client,CFSTR("LCD test"),&port);
+    const unsigned char text[]={0xf0,0x7d,0x4b,1,0,1,'S','Y','S','T','E','M',' ','A','U','D','I','O',' ','T','E','S','T',0xf7};
+    MIDIPacketList list;MIDIPacket *packet=MIDIPacketListInit(&list);
+    if(!MIDIPacketListAdd(&list,sizeof(list),packet,0,sizeof(text),text))status=-1;
+    if(!status)status=MIDISend(port,destination,&list);
+    if(port)MIDIPortDispose(port);if(client)MIDIClientDispose(client);
+    printf("MIDI feedback test status=%d\n",status);return status?1:0;
+}
 int main(int argc,const char **argv) {@autoreleasepool {
-    if(argc!=2 || strcmp(argv[1],"--run")){puts("Dry run: --run sends a test signal exclusively to the KORE experimental virtual device");return 0;}
+    BOOL feedback=argc==3 && !strcmp(argv[2],"--feedback");
+    if((argc!=2 && !feedback) || strcmp(argv[1],"--run")){puts("Dry run: --run sends a test signal exclusively to the KORE experimental virtual device");return 0;}
     AudioDeviceID device=kore_coreaudio_find();if(!device){fprintf(stderr,"KORE virtual output not installed\n");return 1;}
     AudioStreamBasicDescription format={0};UInt32 size=sizeof(format);
     AudioObjectPropertyAddress a={kAudioDevicePropertyStreamFormat,kAudioObjectPropertyScopeOutput,kAudioObjectPropertyElementMain};
     if(AudioObjectGetPropertyData(device,&a,0,NULL,&size,&format) || format.mSampleRate!=48000 || format.mChannelsPerFrame!=2 || format.mBitsPerChannel!=32 || !(format.mFormatFlags&kAudioFormatFlagIsFloat))return 1;
     struct Render state={0};AudioDeviceIOProcID proc=NULL;OSStatus status=AudioDeviceCreateIOProcID(device,render,&state,&proc);
     if(status)return 1;status=AudioDeviceStart(device,proc);
+    if(!status && feedback && send_feedback_test())status=kAudioHardwareUnspecifiedError;
     for(unsigned i=0;!status && !atomic_load(&state.done) && i<350;i++)usleep(10000);
     OSStatus stopped=AudioDeviceStop(device,proc),destroyed=AudioDeviceDestroyIOProcID(device,proc);
     if(stopped || destroyed){fprintf(stderr,"Render teardown failed %d/%d\n",stopped,destroyed);fflush(NULL);_Exit(1);}

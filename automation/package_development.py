@@ -11,7 +11,7 @@ DEST=ROOT/'build/KORE1-macOS-development'
 if DEST.exists():
     shutil.rmtree(DEST)
 DEST.mkdir()
-for name in ('kore1-final-bridge','kore-midi-v10','kore1-native-probe','kore-hal-capture','kore-coreaudio-render'):
+for name in ('kore1-final-bridge','kore-midi-v10','kore1-native-probe','kore-hal-capture','kore-coreaudio-render','kore-coreaudio-system-test'):
     shutil.copy2(ROOT/'build'/name,DEST/name)
 shutil.copytree(ROOT/'build/KoreAudio.driver',DEST/'KoreAudio.driver')
 shutil.copytree(ROOT/'mixxx',DEST/'mixxx')

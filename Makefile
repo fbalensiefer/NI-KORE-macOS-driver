@@ -11,8 +11,10 @@ $(TARGET): src/kore-midi-v10.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) $(LIBUSB_CFLAGS) -o $@ $< $(LIBUSB_LIBS) -framework CoreMIDI -framework CoreFoundation -lpthread
 
-check:
+check: bridge
+	python3 automation/generate_controller.py --check
 	python3 automation/generate_bridge.py --check
+	python3 tests/test_bridge_cli.py
 	python3 tests/test_mixxx_xml.py
 	node tests/test_mixxx.js
 	python3 test_repository.py
@@ -42,31 +44,32 @@ audio-check: audio build/test-caiaq
 .PHONY: native-probe
 native-probe: build/kore1-native-probe
 
-build/kore1-native-probe: audio/native_probe.m audio/native_plan.h audio/native_discovery.h audio/tone.h audio/caiaq.h coreaudio/pcm_source.h coreaudio/rate_match.h coreaudio/pcm_ring.h coreaudio/client.h
+build/kore1-native-probe: audio/native_probe.m audio/controller_engine.h audio/native_plan.h audio/native_discovery.h audio/tone.h audio/caiaq.h coreaudio/pcm_source.h coreaudio/rate_match.h coreaudio/pcm_ring.h coreaudio/client.h
 	@mkdir -p build
-	$(CC) -std=c11 -Wall -Wextra -Werror -O2 -fobjc-arc -fblocks -mmacosx-version-min=12.0 -o $@ $< -framework Foundation -framework CoreAudio -framework IOKit -framework IOUSBHost
+	$(CC) -std=c11 -Wall -Wextra -Werror -O2 -fobjc-arc -fblocks -mmacosx-version-min=12.0 -o $@ $< -framework Foundation -framework CoreAudio -framework CoreMIDI -framework IOKit -framework IOUSBHost
 
 .PHONY: native-check
 build/test-native-plan: tests/test_native_plan.c audio/native_plan.h audio/caiaq.h
 	@mkdir -p build
 	$(CC) -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined -o $@ $<
 
-build/test-native-transport: tests/test_native_transport.m audio/native_probe.m audio/native_plan.h audio/native_discovery.h audio/tone.h audio/caiaq.h coreaudio/pcm_source.h coreaudio/rate_match.h coreaudio/pcm_ring.h coreaudio/client.h
+build/test-native-transport: tests/test_native_transport.m audio/native_probe.m audio/controller_engine.h audio/native_plan.h audio/native_discovery.h audio/tone.h audio/caiaq.h coreaudio/pcm_source.h coreaudio/rate_match.h coreaudio/pcm_ring.h coreaudio/client.h
 	@mkdir -p build
-	$(CC) -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined -fobjc-arc -fblocks -mmacosx-version-min=12.0 -o $@ $< -framework Foundation -framework CoreAudio -framework IOKit -framework IOUSBHost
+	$(CC) -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined -fobjc-arc -fblocks -mmacosx-version-min=12.0 -o $@ $< -framework Foundation -framework CoreAudio -framework CoreMIDI -framework IOKit -framework IOUSBHost
 
-native-check: native-probe build/test-native-plan build/test-native-transport build/test-native-stream build/test-native-tone
+native-check: native-probe build/test-native-plan build/test-native-transport build/test-native-stream build/test-native-tone build/test-native-midi
 	./build/test-native-plan
 	./build/test-native-transport
 	./build/kore1-native-probe --dry-run --layout observed
 	python3 tests/test_native_cli.py
 	./build/test-native-stream
 	./build/test-native-tone
+	./build/test-native-midi
 	python3 automation/test_native_analyzer.py
 
-build/test-native-stream: tests/test_native_stream.m audio/native_probe.m audio/native_plan.h audio/native_discovery.h audio/tone.h audio/caiaq.h coreaudio/pcm_source.h coreaudio/rate_match.h coreaudio/pcm_ring.h coreaudio/client.h
+build/test-native-stream: tests/test_native_stream.m audio/native_probe.m audio/controller_engine.h audio/native_plan.h audio/native_discovery.h audio/tone.h audio/caiaq.h coreaudio/pcm_source.h coreaudio/rate_match.h coreaudio/pcm_ring.h coreaudio/client.h
 	@mkdir -p build
-	$(CC) -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined -fobjc-arc -fblocks -mmacosx-version-min=12.0 -o $@ $< -framework Foundation -framework CoreAudio -framework IOKit -framework IOUSBHost
+	$(CC) -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined -fobjc-arc -fblocks -mmacosx-version-min=12.0 -o $@ $< -framework Foundation -framework CoreAudio -framework CoreMIDI -framework IOKit -framework IOUSBHost
 
 build/test-native-tone: tests/test_native_tone.c audio/tone.h audio/caiaq.h coreaudio/pcm_source.h coreaudio/rate_match.h coreaudio/pcm_ring.h coreaudio/client.h
 	@mkdir -p build
@@ -80,9 +83,9 @@ build/kore-hal-capture: coreaudio/capture.m
 
 .PHONY: coreaudio-prototype
 coreaudio-prototype: build/KoreAudio.driver/Contents/MacOS/KoreAudio
-build/KoreAudio.driver/Contents/MacOS/KoreAudio: coreaudio/plugin.c coreaudio/pcm_ring.h coreaudio/Info.plist
+build/KoreAudio.driver/Contents/MacOS/KoreAudio: kore1-final-bridge.c coreaudio/Info.plist
 	@mkdir -p build/KoreAudio.driver/Contents/MacOS
-	$(CC) -std=c11 -Wall -Wextra -Werror -O2 -fPIC -bundle -o $@ coreaudio/plugin.c -framework CoreAudio -framework CoreFoundation
+	$(CC) -std=c11 -Wall -Wextra -Werror -O2 -fPIC -bundle -DKORE_HAL_PLUGIN -o $@ kore1-final-bridge.c -framework CoreAudio -framework CoreFoundation
 	cp coreaudio/Info.plist build/KoreAudio.driver/Contents/Info.plist
 	codesign --force --sign - build/KoreAudio.driver
 
@@ -102,7 +105,7 @@ coreaudio-check: build/test-rate-match hal-capture coreaudio-prototype build/kor
 
 build/kore-coreaudio-render: coreaudio/render_test.m coreaudio/client.h coreaudio/pcm_ring.h
 	@mkdir -p build
-	$(CC) -std=c11 -Wall -Wextra -Werror -O2 -fobjc-arc -o $@ $< -framework Foundation -framework CoreAudio
+	$(CC) -std=c11 -Wall -Wextra -Werror -O2 -fobjc-arc -o $@ $< -framework Foundation -framework CoreAudio -framework CoreMIDI
 
 build/test-coreaudio-bundle: tests/test_coreaudio_bundle.m
 	@mkdir -p build
@@ -115,11 +118,25 @@ build/test-rate-match: tests/test_rate_match.c coreaudio/rate_match.h coreaudio/
 # Reproducible standalone C bridge and complete local development package.
 .PHONY: bridge development-package
 bridge: build/kore1-final-bridge
-kore1-final-bridge.c: kore1-bridge-audio.c audio/caiaq.h automation/generate_bridge.py
+kore1-final-bridge.c: $(wildcard audio/*.h audio/*.m coreaudio/*.h) coreaudio/plugin.c automation/generate_bridge.py
 	python3 automation/generate_bridge.py
 build/kore1-final-bridge: kore1-final-bridge.c
 	@mkdir -p build
-	$(CC) $(CFLAGS) -Werror $(LIBUSB_CFLAGS) -o $@ $< $(LIBUSB_LIBS) -framework CoreMIDI -framework CoreFoundation -lpthread -lm
+	$(CC) $(CFLAGS) -Werror -x objective-c -fobjc-arc -fblocks -mmacosx-version-min=12.0 -o $@ $< -framework Foundation -framework CoreAudio -framework CoreMIDI -framework IOKit -framework IOUSBHost
 
-development-package: bridge all native-probe hal-capture coreaudio-prototype build/kore-coreaudio-render
+development-package: bridge all native-probe hal-capture coreaudio-prototype build/kore-coreaudio-render build/kore-coreaudio-system-test
 	python3 automation/package_development.py
+
+audio/controller_engine.h: src/kore-midi-v10.c automation/generate_controller.py
+	python3 automation/generate_controller.py
+
+audio/system_resources.h: coreaudio/Info.plist automation/system_driver.sh automation/generate_system_header.py
+	python3 automation/generate_system_header.py
+
+build/test-native-midi: tests/test_native_midi.m audio/native_probe.m audio/controller_engine.h
+	@mkdir -p build
+	$(CC) -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined -fobjc-arc -fblocks -mmacosx-version-min=12.0 -o $@ $< -framework Foundation -framework CoreAudio -framework CoreMIDI -framework IOKit -framework IOUSBHost
+
+build/kore-coreaudio-system-test: coreaudio/system_test.m coreaudio/client.h coreaudio/pcm_ring.h
+	@mkdir -p build
+	$(CC) -std=c11 -Wall -Wextra -Werror -O2 -fobjc-arc -o $@ $< -framework Foundation -framework CoreAudio

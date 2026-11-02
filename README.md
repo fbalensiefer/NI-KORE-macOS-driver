@@ -3,40 +3,37 @@
 An open-source controller bridge and experimental native USB audio transport for
 the **original KORE 1** (`17cc:4711`) on Apple Silicon macOS.
 
-**Current milestone — November 2, 2026:** repeated native silence streaming and
-recorded low-level analog tone playback through the KORE headphone connection.
-This is not yet a general-purpose macOS audio driver: the CoreAudio output plug-in and PCM feed are local prototypes, not installed
-or verified in the system HAL. KORE audio-input capture is not implemented.
+**Current integration:** a shared native USB MIDI/audio executable and a CoreAudio
+output HAL plug-in now build from the same standalone
+[kore1-final-bridge.c](kore1-final-bridge.c). Explicit commands install the system
+bundle and start the bridge at login. The bridge runs CoreMIDI, controller feedback
+and RX-matched audio concurrently through one USB interface owner.
 
-| Function | Status |
-| --- | --- |
-| Controller → CoreMIDI | Existing encoder, button and analog mappings preserved |
-| LED/LCD feedback | Existing opt-in controller implementation preserved |
-| Native USB audio | RX-driven variable lengths, including trailing-zero packets |
-| Bounded silence | Repeated three-second hardware runs; stop/reopen tested |
-| Analog playback | Near-440 Hz recorded from logical channels 3/4 via MAYA44 |
-| Capture / clock measurements | Gap-free direct HAL capture verified; short tests suggest about +200 ppm KORE/host offset |
-| CoreAudio / PCM feed | Local output plug-in and bounded bridge prototype; real host testing pending |
-| KORE audio input | Not implemented |
+The new integration has passed offline callback, queue, controller, HAL ABI and
+rate-matching tests. Its live system/hardware validation must be checked against
+[the validation record](docs/NATIVE-INTEGRATION-VALIDATION.md). PCM remains capped
+to .00025 peak on logical outputs 3/4, with about 171ms reported output latency.
+KORE audio input and full-level audio
+qualification are not implemented.
 
-## Consolidated bridge and development package
+## Build, install and run
 
 ```sh
-./build.sh
-./run-midi.sh
+make development-package
+make check audio-check native-check coreaudio-check
+./build/kore1-final-bridge --install-system
+./build/kore1-final-bridge --system-status
+./build/kore1-final-bridge --run --coreaudio-pcm --continuous --mixxx-feedback
 ```
 
-Builds `build/kore1-final-bridge` from the reproducible single-file
-[kore1-final-bridge.c](kore1-final-bridge.c), plus the native audio tools and local
-CoreAudio plug-in. The compiled collection is
-`build/KORE1-macOS-development.zip`; nothing is installed in the system.
-The consolidated C executable supports MIDI/LED/LCD and experimental libusb audio;
-the hardware-verified native audio transport remains separate and cannot run
-concurrently with it. This is not a finished unified CoreAudio/MIDI driver.
+Installation requires a macOS administrator dialog and restarts CoreAudio. It
+preserves existing bundles and does not change audio defaults. Optional automatic
+startup: `./build/kore1-final-bridge --install-login`. Run one KORE process at a time.
+See [installation, removal, standalone compilation and Mixxx setup](docs/DEVELOPMENT-PACKAGE.md).
 
-New Mixxx files are [mixxx/KORE-1.midi.xml](mixxx/KORE-1.midi.xml) and
-[mixxx/KORE-1.js](mixxx/KORE-1.js), including cue release mappings and tested feedback
-message generation. See [package instructions and remaining limits](docs/DEVELOPMENT-PACKAGE.md).
+The complete local archive is `build/KORE1-macOS-development.zip`. Current Mixxx
+files are [mixxx/KORE-1.midi.xml](mixxx/KORE-1.midi.xml) and
+[mixxx/KORE-1.js](mixxx/KORE-1.js). Use `./run-midi.sh` for continuous MIDI alone.
 
 ## Build
 
@@ -67,9 +64,9 @@ See [architecture](ARCHITECTURE.md), [protocol](PROTOCOL.md) and [testing](TESTI
 
 ## Native audio diagnostics
 
-The native transport and libusb controller bridge both require exclusive access
-to interface 0. Run only one KORE process at a time; simultaneous MIDI/audio via
-this native prototype is not implemented.
+The isolated native probe and legacy libusb tools require exclusive interface 0
+access. Run only one KORE process at a time. Use the final bridge above for
+simultaneous MIDI/audio; the probe remains a separate diagnostic tool.
 
 Hardware-free option validation and read-only registry discovery:
 

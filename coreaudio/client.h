@@ -8,8 +8,21 @@
 static inline AudioDeviceID kore_coreaudio_find(void) {
     AudioObjectPropertyAddress a={kAudioHardwarePropertyTranslateUIDToDevice,kAudioObjectPropertyScopeGlobal,kAudioObjectPropertyElementMain};
     CFStringRef uid=CFSTR("org.nikore.experimental.output");AudioDeviceID device=kAudioObjectUnknown;UInt32 size=sizeof(device);
-    if(AudioObjectGetPropertyData(kAudioObjectSystemObject,&a,sizeof(uid),&uid,&size,&device))return kAudioObjectUnknown;
-    return device;
+    OSStatus status=AudioObjectGetPropertyData(kAudioObjectSystemObject,&a,sizeof(uid),&uid,&size,&device);
+    if(!status && device)return device;
+    a.mSelector=kAudioHardwarePropertyDevices;size=0;
+    status=AudioObjectGetPropertyDataSize(kAudioObjectSystemObject,&a,0,NULL,&size);
+    if(status || size>1024*sizeof(AudioDeviceID)) {fprintf(stderr,"CoreAudio device enumeration status=%d (sandbox/audio service access may be unavailable)\n",status);return kAudioObjectUnknown;}
+    AudioDeviceID devices[1024];
+    if(AudioObjectGetPropertyData(kAudioObjectSystemObject,&a,0,NULL,&size,devices))return kAudioObjectUnknown;
+    AudioObjectPropertyAddress name={kAudioDevicePropertyDeviceUID,kAudioObjectPropertyScopeGlobal,kAudioObjectPropertyElementMain};
+    for(unsigned i=0;i<size/sizeof(AudioDeviceID);i++) {
+        CFStringRef found=NULL;UInt32 length=sizeof(found);
+        if(!AudioObjectGetPropertyData(devices[i],&name,0,NULL,&length,&found) && found) {
+            BOOL match=CFEqual(found,uid);CFRelease(found);if(match)return devices[i];
+        }
+    }
+    return kAudioObjectUnknown;
 }
 static inline OSStatus kore_coreaudio_lease(AudioDeviceID device,BOOL own) {
     AudioObjectPropertyAddress a={'kown',kAudioObjectPropertyScopeGlobal,kAudioObjectPropertyElementMain};

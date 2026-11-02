@@ -39,3 +39,15 @@ interface from competing processes.
 The root compatibility libusb bridge and archived source snapshots are retained
 for research. Current native results, including capture limitations, are linked
 from the README.
+
+## Shared native integration
+
+The final translation unit conditionally builds either the IOUSBHost/CoreMIDI
+executable (Objective-C) or the CoreAudio HAL bundle (C). Both derive from the same
+modular sources. The native owner has independent serial queues for ISO/bulk IN,
+MIDI decoding/filter expiry, bulk OUT LED/LCD feedback, and CoreAudio PCM prefetch.
+MIDI callback threads only enqueue feedback. UI/display traffic never sleeps on the
+ISO queue. The HAL remains inside coreaudiod and transfers fixed-format PCM via
+host-marshalled custom CFData properties with an exclusive PID consumer lease.
+System installation and login-agent setup are explicit CLI operations, embedded
+in the generated file. They are not invoked by builds or normal playback.
