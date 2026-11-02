@@ -19,8 +19,10 @@ concurrently.
 | .00025 (default) | Right, 660Hz | 1 | -79.24dBFS | 19.25dB | -0.76dB |
 | .001 (bounded test) | Left, 440Hz | 2 | -68.09dBFS | 26.50dB | -0.16dB |
 | .001 (bounded test) | Right, 660Hz | 1 | -68.01dBFS | 32.47dB | -0.18dB |
+| .00025 (final installed build) | Left, 440Hz | 2 | -71.29dBFS | 23.84dB | -0.21dB |
+| .00025 (final installed build) | Right, 660Hz | 1 | -71.15dBFS | 29.36dB | -0.21dB |
 
-Both recordings contain exactly 441,000 frames at 44.1kHz, zero timestamp gaps,
+All three recordings contain exactly 441,000 frames at 44.1kHz, zero timestamp gaps,
 zero invalid capture callbacks, and no clipped samples. Both solo paths and the
 dual-channel window were detected. No active-window amplitude dips below 70% of
 the median were detected at the analyzer's 250ms window/125ms hop resolution.
@@ -38,13 +40,19 @@ Local ignored evidence:
 
 - `artifacts/coreaudio-loopback-20261102-202230-968034/` — installed service, .00025.
 - `artifacts/coreaudio-loopback-20261102-202658-667671/` — supervised bridge, .001.
+- `artifacts/coreaudio-loopback-20261102-204733-838625/` — final installed build, .00025.
 
 The second measurement's stronger signal yields appreciably higher apparent
 separation. The first low-level result therefore cannot be treated as a reliable
 DAC crosstalk rating. The remaining noise, unknown cable pinout and uncalibrated
 ADC path still prevent a full stereo-quality qualification. No automatic channel
 swap was made. At .001, the two measured solo levels differ by about 0.08dB across
-this whole loopback path, not just the KORE DAC.
+this whole loopback path, not just the KORE DAC. The final installed build also
+passed both solo paths and the dual window with no new service errors or restart.
+The same default digital gain yielded a higher recorded level after system
+restarts; analog/ADC gain settings were not calibrated or continuously monitored.
+The cause of that level difference is open. Do not infer fixed analog gain or
+absolute crosstalk specifications from comparisons between these sessions.
 
 ## Reproduce
 
@@ -87,3 +95,12 @@ The [Linux CAIAQ driver](https://github.com/torvalds/linux/blob/v6.12/sound/usb/
 specifies signed24 big-endian PCM and playback byte position 4 for alignment 2;
 these conventions remain unchanged. Physical channel labeling, full-level quality,
 settled clock accuracy and lower output latency remain separate validation work.
+
+## Login-service restart correction
+
+The system update exposed a launchd registration race when restart attempts
+coincided: `bootout` can return while the old service is still registered as
+`SIGTERMed`, making immediate `bootstrap` fail with EIO. The installer now waits
+up to five seconds for the registration to disappear before bootstrapping.
+Two consecutive live re-install/start attempts both reached native stereo-stream
+readiness successfully. The normal PCM gain remains .00025.

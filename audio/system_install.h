@@ -48,6 +48,23 @@ static int kore_system_install(BOOL remove) {
     int rc=kore_task(@"/usr/bin/osascript",@[@"-e",script,@"--",installer,remove?@"uninstall":@"install",staging]);
     [fm removeItemAtPath:staging error:NULL];return rc;
 }
+/* bootout may return before launchd has removed the service registration.
+ * Wait for disappearance before bootstrap to avoid transient EIO/SIGTERMed races. */
+static int kore_launchctl_quiet(NSArray<NSString *> *arguments) {
+    NSTask *task=[NSTask new];task.executableURL=[NSURL fileURLWithPath:@"/bin/launchctl"];task.arguments=arguments;
+    task.standardOutput=[NSFileHandle fileHandleWithNullDevice];task.standardError=[NSFileHandle fileHandleWithNullDevice];
+    NSError *error=nil;if(![task launchAndReturnError:&error])return -1;
+    [task waitUntilExit];return task.terminationStatus;
+}
+static int kore_login_stop(NSString *service) {
+    if(kore_launchctl_quiet(@[@"print",service])!=0)return 0;
+    (void)kore_launchctl_quiet(@[@"bootout",service]);
+    for(unsigned retry=0;retry<50;retry++) {
+        if(kore_launchctl_quiet(@[@"print",service])!=0)return 0;
+        usleep(100000);
+    }
+    fprintf(stderr,"Login bridge is still stopping; bootstrap was not attempted\n");return 1;
+}
 static int kore_login_install(BOOL remove) {
     NSString *label=@"org.nikore.bridge";
     NSString *directory=[NSHomeDirectory() stringByAppendingPathComponent:@"Library/LaunchAgents"];
@@ -55,8 +72,8 @@ static int kore_login_install(BOOL remove) {
     NSString *domain=[NSString stringWithFormat:@"gui/%u",getuid()];
     NSString *service=[domain stringByAppendingFormat:@"/%@",label];
     if(remove) {
+        if(kore_login_stop(service))return 1;
         if([[NSFileManager defaultManager] fileExistsAtPath:path]) {
-            (void)kore_task(@"/bin/launchctl",@[@"bootout",service]);
             NSError *error=nil;if(![[NSFileManager defaultManager] removeItemAtPath:path error:&error]){report_error("remove login agent",error);return 1;}
         }
         return 0;
@@ -71,6 +88,6 @@ static int kore_login_install(BOOL remove) {
         @"StandardErrorPath":[NSHomeDirectory() stringByAppendingPathComponent:@"Library/Logs/KORE1-bridge-error.log"]};
     NSData *data=[NSPropertyListSerialization dataWithPropertyList:agent format:NSPropertyListXMLFormat_v1_0 options:0 error:&error];
     if(!data || ![data writeToFile:path options:NSDataWritingAtomic error:&error]){report_error("write login agent",error);return 1;}
-    (void)kore_task(@"/bin/launchctl",@[@"bootout",service]);
+    if(kore_login_stop(service))return 1;
     return kore_task(@"/bin/launchctl",@[@"bootstrap",domain,path]);
 }

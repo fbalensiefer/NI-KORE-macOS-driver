@@ -76,3 +76,6 @@ Prior development occurred as standalone `kore-midi-v3` through `v9` prototypes 
   preserving the original ceiling and normal startup level.
 - Verify exact independent signed24 wire samples and record both real stereo
   measurements. Cable pinout and full quality/clock qualification remain open.
+
+- Fix login-service reinstallation: wait for launchd bootout completion before
+  bootstrap, including removal of an orphan service registration.

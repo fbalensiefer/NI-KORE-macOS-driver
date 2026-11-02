@@ -11,6 +11,7 @@ import time
 from measure_native_quality import measure
 from analyze_stereo_capture import analyze as analyze_stereo
 ROOT=Path(__file__).resolve().parents[1]
+BIN=ROOT/'build' if (ROOT/'build/kore1-final-bridge').is_file() else ROOT
 def wait_ready(process,path,marker,timeout):
     until=time.monotonic()+timeout
     while marker not in path.read_text():
@@ -32,7 +33,7 @@ def main():
     capture=bridge=None
     try:
         with capturelog.open('w') as c,bridgelog.open('w') as b,renderlog.open('w') as r:
-            capture=subprocess.Popen([str(ROOT/'build/kore-hal-capture'),'--record',str(wav),'--report',str(timing),'--seconds','10'],stdout=c,stderr=subprocess.STDOUT)
+            capture=subprocess.Popen([str(BIN/'kore-hal-capture'),'--record',str(wav),'--report',str(timing),'--seconds','10'],stdout=c,stderr=subprocess.STDOUT)
             wait_ready(capture,capturelog,'CAPTURE READY',5)
             agent_before=None
             if args.use_login_bridge:
@@ -45,9 +46,9 @@ def main():
                 agent_before=agent_state()
                 error_log=Path.home()/'Library/Logs/KORE1-bridge-error.log';error_offset=error_log.stat().st_size
             else:
-                bridge=subprocess.Popen([str(ROOT/'build/kore1-final-bridge'),'--run','--coreaudio-pcm','--continuous','--mixxx-feedback','--pcm-gain',str(args.pcm_gain)],stdout=b,stderr=subprocess.STDOUT)
+                bridge=subprocess.Popen([str(BIN/'kore1-final-bridge'),'--run','--coreaudio-pcm','--continuous','--mixxx-feedback','--pcm-gain',str(args.pcm_gain)],stdout=b,stderr=subprocess.STDOUT)
                 wait_ready(bridge,bridgelog,'NATIVE STREAM',6)
-            command=[str(ROOT/'build/kore-coreaudio-render'),'--run','--feedback']
+            command=[str(BIN/'kore-coreaudio-render'),'--run','--feedback']
             if args.stereo_test:command.append('--stereo-test')
             render=subprocess.run(command,stdout=r,stderr=subprocess.STDOUT,timeout=8)
             stop(bridge)
