@@ -12,8 +12,16 @@ $(TARGET): src/kore-midi-v10.c
 	$(CC) $(CFLAGS) $(LIBUSB_CFLAGS) -o $@ $< $(LIBUSB_LIBS) -framework CoreMIDI -framework CoreFoundation -lpthread
 
 check:
-	python3 tests/test_repository.py
-	@if command -v node >/dev/null 2>&1; then node --check mixxx/KORE-1-Mixxx-v10.js; else echo 'Node.js not found; JS syntax check skipped'; fi
+	@if [ -f tests/test_repository.py ]; then \
+		python3 tests/test_repository.py; \
+	else \
+		echo "SKIP: tests/test_repository.py fehlt"; \
+	fi
+	@if command -v node >/dev/null 2>&1 && [ -f mixxx/KORE-1-Mixxx-v10.js ]; then \
+		node --check mixxx/KORE-1-Mixxx-v10.js; \
+	else \
+		echo "SKIP: Mixxx-JavaScript-Test nicht verfügbar"; \
+	fi
 
 clean:
 	rm -rf build
