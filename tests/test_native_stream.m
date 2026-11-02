@@ -21,6 +21,7 @@
 @interface MockStreamPipe : NSObject { @public
     NSMutableArray<MockRequest *> *pending;
     uint64_t lastFrame;
+    dispatch_queue_t deferredAbortQueue;
     BOOL reject,input;
     unsigned submissions;
 }
@@ -47,7 +48,8 @@
     (void)error;assert(option==IOUSBHostAbortOptionSynchronous);
     while(pending.count) {
         MockRequest *request=pending[0];[pending removeObjectAtIndex:0];
-        request->callback(kIOReturnAborted,request->list);
+        if(deferredAbortQueue)dispatch_after(dispatch_time(DISPATCH_TIME_NOW,30*NSEC_PER_MSEC),deferredAbortQueue,^{request->callback(kIOReturnAborted,request->list);});
+        else request->callback(kIOReturnAborted,request->list);
     }
     return YES;
 }
@@ -98,6 +100,7 @@ int main(void) {@autoreleasepool {
                 out->reject=YES;completeIn(in,clock,200);assert(probe->failed);
             }
         });
+        if(mode==0){in->deferredAbortQueue=probe->queue;out->deferredAbortQueue=probe->queue;}
         assert([probe stop]);
         assert(in->pending.count==0 && out->pending.count==0);
         for(KoreNativeSlot *slot in probe->streamIns)assert(!slot->busy);

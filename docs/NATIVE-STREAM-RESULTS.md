@@ -109,3 +109,12 @@ connected KORE1. It does not expose a CoreAudio device or certify DAW playback.
 The next step is separately authorized capped single-channel PCM plus a verified
 MAYA44 capture, preserving all capture channels and checking its current device
 selection. Tone generation remains disabled pending that authorization.
+
+
+## Subsequent analog playback milestone
+
+The user subsequently authorized tones and MAYA44 recording. A capped native
+tone path and repeated recordings now demonstrate near-440 Hz analog output on
+the confirmed headphone connection for logical channels 3/4. See
+[TONE-PLAYBACK-RESULTS.md](TONE-PLAYBACK-RESULTS.md) for exact results, the cleanup
+race discovered during recording and fixed, and capture-quality limitations.

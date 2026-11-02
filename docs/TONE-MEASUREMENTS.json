@@ -1,0 +1,110 @@
+[
+  {
+    "logical_output": 1,
+    "run": "native-tone-ch1-20261102-151555",
+    "driver_exit": 0,
+    "capture_exit": 0,
+    "wav_sha256": "ef102b986f40475f05e21cdaf2b865994feb48f7ad4a24f76b6177468c71f8cf",
+    "captured_seconds": 9.245351473922902,
+    "strongest": {
+      "capture_channel": 1,
+      "peak_dbfs": -63.46054508275024,
+      "baseline_440_dbfs": -126.43242496055512,
+      "start_s": 1.874829931972789,
+      "tone_rms_dbfs": -107.28694499401325,
+      "neighbor_contrast_db": 9.68885671522926,
+      "peak_near_440_hz": 440.5,
+      "tone_detected": false
+    }
+  },
+  {
+    "logical_output": 2,
+    "run": "native-tone-ch2-20261102-151704",
+    "driver_exit": 0,
+    "capture_exit": 0,
+    "wav_sha256": "d2498f612c8311469ef6c6d560b77d86530eff4e9d7943726bc650d2ee8f1b8d",
+    "captured_seconds": 9.19891156462585,
+    "strongest": {
+      "capture_channel": 1,
+      "peak_dbfs": -63.86461280451598,
+      "baseline_440_dbfs": -119.32629048045587,
+      "start_s": 1.1248979591836734,
+      "tone_rms_dbfs": -110.27726396387206,
+      "neighbor_contrast_db": 13.226382990768208,
+      "peak_near_440_hz": 440.75,
+      "tone_detected": false
+    }
+  },
+  {
+    "logical_output": 3,
+    "run": "native-tone-ch3-20261102-151727",
+    "driver_exit": 0,
+    "capture_exit": 0,
+    "wav_sha256": "1d22a925ebe1d0857d17405643727ca493f33292f2061d80d280c14169320a41",
+    "captured_seconds": 9.152471655328798,
+    "strongest": {
+      "capture_channel": 2,
+      "peak_dbfs": -63.86461280451598,
+      "baseline_440_dbfs": -117.23051990636702,
+      "start_s": 1.2498866213151927,
+      "tone_rms_dbfs": -84.74505426095733,
+      "neighbor_contrast_db": 18.861470550923322,
+      "peak_near_440_hz": 440.5,
+      "tone_detected": true
+    }
+  },
+  {
+    "logical_output": 3,
+    "run": "native-tone-ch3-20261102-151831",
+    "driver_exit": 1,
+    "capture_exit": 0,
+    "wav_sha256": "dfc19e7898acc2c9be1d84f408dd1f88f1e7bdaba76b9856be251e9d5878157c",
+    "captured_seconds": 9.106031746031746,
+    "strongest": {
+      "capture_channel": 2,
+      "peak_dbfs": -63.46054508275024,
+      "baseline_440_dbfs": -127.92667180593709,
+      "start_s": 1.4998639455782312,
+      "tone_rms_dbfs": -85.56591654048526,
+      "neighbor_contrast_db": 17.239281025154856,
+      "peak_near_440_hz": 440.75,
+      "tone_detected": true
+    }
+  },
+  {
+    "logical_output": 3,
+    "run": "native-tone-ch3-20261102-152003",
+    "driver_exit": 0,
+    "capture_exit": 0,
+    "wav_sha256": "3f2c9f881fd45d529cd55b581af20992a4b320aa5ace7c1b96efd976cb3e4bf7",
+    "captured_seconds": 9.106031746031746,
+    "strongest": {
+      "capture_channel": 2,
+      "peak_dbfs": -63.46054508275024,
+      "baseline_440_dbfs": -130.30310756560607,
+      "start_s": 1.374875283446712,
+      "tone_rms_dbfs": -85.86192766309667,
+      "neighbor_contrast_db": 18.337359666710835,
+      "peak_near_440_hz": 440.75,
+      "tone_detected": true
+    }
+  },
+  {
+    "logical_output": 4,
+    "run": "native-tone-ch4-20261102-151742",
+    "driver_exit": 0,
+    "capture_exit": 0,
+    "wav_sha256": "20ba85ed9bb07a7378de616262fe70c8cc6321f79581d73fded795ec95150b40",
+    "captured_seconds": 9.152471655328798,
+    "strongest": {
+      "capture_channel": 1,
+      "peak_dbfs": -63.0744419788425,
+      "baseline_440_dbfs": -129.1529485221327,
+      "start_s": 1.374875283446712,
+      "tone_rms_dbfs": -84.35449456498256,
+      "neighbor_contrast_db": 15.094259352357826,
+      "peak_near_440_hz": 440.75,
+      "tone_detected": true
+    }
+  }
+]

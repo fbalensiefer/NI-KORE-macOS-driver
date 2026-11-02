@@ -12,6 +12,10 @@ cases += [(['--stream-silence'],0),(['--stream-silence','--duration-ms','100'],0
           (['--stream-silence','--duration-ms','3001'],2),(['--stream-silence','--duration-ms','0'],2),
           (['--stream-silence','--duration-ms','x'],2),(['--stream-silence','--layout','rx'],2),
           (['--stream-silence','--zero-offset','compact'],2),(['--stream-silence','--buffer-guard','0'],2)]
+cases += [(['--stream-tone',str(ch)],0) for ch in range(1,5)]
+cases += [(['--stream-tone','0'],2),(['--stream-tone','1','--tone-amplitude','.002'],2),
+          (['--stream-tone','1','--tone-amplitude','nan'],2),(['--stream-tone','1','--duration-ms','100'],2),
+          (['--stream-tone','1','--stream-silence'],2),(['--tone-amplitude','.00025'],2)]
 for args,expected in cases:
     r=subprocess.run([str(exe),'--dry-run',*args],capture_output=True,text=True)
     assert r.returncode==expected,(args,r.returncode,r.stdout,r.stderr)

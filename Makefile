@@ -38,7 +38,7 @@ audio-check: audio build/test-caiaq
 .PHONY: native-probe
 native-probe: build/kore1-native-probe
 
-build/kore1-native-probe: audio/native_probe.m audio/native_plan.h audio/native_discovery.h audio/caiaq.h
+build/kore1-native-probe: audio/native_probe.m audio/native_plan.h audio/native_discovery.h audio/tone.h audio/caiaq.h
 	@mkdir -p build
 	$(CC) -std=c11 -Wall -Wextra -Werror -O2 -fobjc-arc -fblocks -mmacosx-version-min=12.0 -o $@ $< -framework Foundation -framework IOKit -framework IOUSBHost
 
@@ -47,17 +47,23 @@ build/test-native-plan: tests/test_native_plan.c audio/native_plan.h audio/caiaq
 	@mkdir -p build
 	$(CC) -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined -o $@ $<
 
-build/test-native-transport: tests/test_native_transport.m audio/native_probe.m audio/native_plan.h audio/native_discovery.h audio/caiaq.h
+build/test-native-transport: tests/test_native_transport.m audio/native_probe.m audio/native_plan.h audio/native_discovery.h audio/tone.h audio/caiaq.h
 	@mkdir -p build
 	$(CC) -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined -fobjc-arc -fblocks -mmacosx-version-min=12.0 -o $@ $< -framework Foundation -framework IOKit -framework IOUSBHost
 
-native-check: native-probe build/test-native-plan build/test-native-transport build/test-native-stream
+native-check: native-probe build/test-native-plan build/test-native-transport build/test-native-stream build/test-native-tone
 	./build/test-native-plan
 	./build/test-native-transport
 	./build/kore1-native-probe --dry-run --layout observed
 	python3 tests/test_native_cli.py
 	./build/test-native-stream
+	./build/test-native-tone
+	python3 automation/test_native_analyzer.py
 
-build/test-native-stream: tests/test_native_stream.m audio/native_probe.m audio/native_plan.h audio/native_discovery.h audio/caiaq.h
+build/test-native-stream: tests/test_native_stream.m audio/native_probe.m audio/native_plan.h audio/native_discovery.h audio/tone.h audio/caiaq.h
 	@mkdir -p build
 	$(CC) -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined -fobjc-arc -fblocks -mmacosx-version-min=12.0 -o $@ $< -framework Foundation -framework IOKit -framework IOUSBHost
+
+build/test-native-tone: tests/test_native_tone.c audio/tone.h audio/caiaq.h
+	@mkdir -p build
+	$(CC) -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined -o $@ $< -lm

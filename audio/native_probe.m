@@ -1,10 +1,11 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * Isolated IOUSBHost transport prototype; no CoreAudio device, MIDI or tones.
+ * Isolated IOUSBHost transport prototype; no CoreAudio device or MIDI; tones require explicit opt-in.
  * This process owns interface 0 exclusively. Never run beside the libusb bridge.
  */
 #import <Foundation/Foundation.h>
 #import <IOUSBHost/IOUSBHost.h>
 #include "native_plan.h"
+#include "tone.h"
 #include "native_discovery.h"
 #include <signal.h>
 #include <time.h>
@@ -41,6 +42,7 @@ static uint64_t native_now_ns(void) {
     int expected,profile,zeroAtStart,failed;
     unsigned guardBytes,streamDurationMs,bulkGeneration;
     BOOL streamMode,streamFinished;
+    unsigned toneChannel;double toneAmplitude;struct caiaq_tone tone;
     NSMutableArray<KoreNativeSlot *> *streamIns,*streamOuts;
     dispatch_source_t streamTimer;
     uint64_t streamStart,streamDeadline,nextInFrame,nextOutFrame;
@@ -228,7 +230,7 @@ static uint64_t native_now_ns(void) {
     memset(slot->transactions,0,sizeof(slot->transactions));
     for(unsigned i=0;i<8;i++) {
         if(caiaq_pack((unsigned char *)slot->data.mutableBytes+plan.payload_offsets[i],
-            slot->data.length-plan.payload_offsets[i],lengths[i],NULL,NULL)) {
+            slot->data.length-plan.payload_offsets[i],lengths[i],toneChannel?caiaq_tone_byte:NULL,toneChannel?&tone:NULL)) {
             [self finishFailure:"stream silence packing" error:nil];return;
         }
         slot->transactions[i].requestCount=lengths[i];
@@ -246,7 +248,7 @@ static uint64_t native_now_ns(void) {
         firstFrameNumber:slot->frame options:IOUSBHostIsochronousTransferOptionsNone error:&error
         completionHandler:^(IOReturn status,IOUSBHostIsochronousTransaction *list) {
         slot->busy=NO;
-        if(self->stopping || self->failed) {self->outCancelled++;return;}
+        if(self->stopping || self->failed) {self->outCancelled++;dispatch_semaphore_signal(self->done);return;}
         if(status!=kIOReturnSuccess) {
             fprintf(stderr,"NATIVE stream OUT status=0x%08x frame=%llu\n",status,slot->frame);
             [self finishFailure:"stream OUT completion" error:nil];return;
@@ -274,8 +276,8 @@ static uint64_t native_now_ns(void) {
         firstFrameNumber:slot->frame options:IOUSBHostIsochronousTransferOptionsNone error:&error
         completionHandler:^(IOReturn status,IOUSBHostIsochronousTransaction *list) {
         slot->busy=NO;
-        if(self->stopping || self->failed) {self->inCancelled++;return;}
-        if(![self streamCanContinue]) {self->inCancelled++;return;}
+        if(self->stopping || self->failed) {self->inCancelled++;dispatch_semaphore_signal(self->done);return;}
+        if(![self streamCanContinue]) {self->inCancelled++;dispatch_semaphore_signal(self->done);return;}
         if(status!=kIOReturnSuccess && status!=kIOReturnUnderrun) {
             fprintf(stderr,"NATIVE stream IN status=0x%08x frame=%llu\n",status,slot->frame);
             [self finishFailure:"stream IN completion" error:nil];return;
@@ -306,6 +308,7 @@ static uint64_t native_now_ns(void) {
     for(unsigned i=0;i<64;i++)[streamOuts addObject:[KoreNativeSlot new]];
     uint64_t now=[interface frameNumberWithTime:NULL];
     if(!now) {[self finishFailure:"stream frame clock" error:nil];return;}
+    if(toneChannel && caiaq_tone_init(&tone,toneChannel,toneAmplitude)) {[self finishFailure:"tone configuration" error:nil];return;}
     streamStart=native_now_ns();streamDeadline=streamStart+(uint64_t)streamDurationMs*1000000;
     nextInFrame=now+4;
     streamTimer=dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER,0,0,queue);
@@ -314,7 +317,7 @@ static uint64_t native_now_ns(void) {
         self->stopping=YES;self->streamFinished=YES;dispatch_semaphore_signal(self->done);
     });
     dispatch_resume(streamTimer);
-    puts("NATIVE STREAM silence: 32 IN / 64 OUT slots, OUT lead=32ms, 8 microframes each, explicit contiguous frame numbers; no tones");
+    printf("NATIVE STREAM %s: 32 IN / 64 OUT slots, OUT lead=32ms, 8 microframes each, explicit contiguous frame numbers\n",toneChannel?"OPT-IN SINGLE-CHANNEL TONE":"silence");
     for(KoreNativeSlot *slot in streamIns) {if(failed || stopping)break;[self submitStreamIn:slot];}
 }
 - (BOOL)waitForStream {
@@ -327,6 +330,7 @@ static uint64_t native_now_ns(void) {
         streamStart?(native_now_ns()-streamStart)/1000000.0:0.0,failed,streamFinished,
         inSubmitted,inCompletedBatches,inPackets,inZeroPackets,inBytes,inCancelled,
         outSubmitted,outCompletedBatches,outPackets,outBytes,outCancelled);
+    if(toneChannel)printf("NATIVE TONE channel=%u amplitude=%.8f frequency=440 PCM_rate=48000 generated_samples=%llu nonzero_samples=%llu\n",toneChannel,toneAmplitude,(unsigned long long)tone.generated,(unsigned long long)tone.nonzero);
     printf("NATIVE STREAM layouts all_zero=%llu trailing_zero=%llu peak_OUT_busy=%llu/64\n",allZeroBatches,trailingZeroBatches,maxOutBusy);
 }
 - (BOOL)stop {
@@ -340,10 +344,20 @@ static uint64_t native_now_ns(void) {
         }
     }
     if(!success)return NO; /* caller exits without releasing active backing storage */
-    dispatch_sync(queue,^{});
-    for(KoreNativeSlot *slot in streamIns)if(slot->busy)success=NO;
-    for(KoreNativeSlot *slot in streamOuts)if(slot->busy)success=NO;
-    if(!success) {fprintf(stderr,"NATIVE pending stream callbacks after synchronous abort\n");return NO;}
+    /* Native abort can finish kernel IO before its callback is enqueued. Keep
+     * every buffer alive while draining late callbacks on the serial queue. */
+    uint64_t drainDeadline=native_now_ns()+500000000;
+    __block unsigned pending=0;
+    do {
+        dispatch_sync(queue,^{
+            pending=0;
+            for(KoreNativeSlot *slot in self->streamIns)if(slot->busy)pending++;
+            for(KoreNativeSlot *slot in self->streamOuts)if(slot->busy)pending++;
+        });
+        if(!pending)break;
+        dispatch_semaphore_wait(done,dispatch_time(DISPATCH_TIME_NOW,10*NSEC_PER_MSEC));
+    } while(native_now_ns()<drainDeadline);
+    if(pending) {fprintf(stderr,"NATIVE callback drain timeout pending=%u; retaining buffers\n",pending);return NO;}
     [interface destroy];dispatch_sync(queue,^{});
     if(streamMode)[self reportStream];
     streamTimer=nil;
@@ -352,9 +366,17 @@ static uint64_t native_now_ns(void) {
 @end
 int main(int argc,const char **argv) {
     @autoreleasepool {
-        int profile=caiaq_probe_id("observed"),zeroAtStart=1;unsigned guard=1;BOOL run=NO,discover=NO,stream=NO,layoutSet=NO;unsigned duration=3000;
+        int profile=caiaq_probe_id("observed"),zeroAtStart=1;unsigned guard=1;BOOL run=NO,discover=NO,stream=NO,layoutSet=NO,silenceSet=NO,amplitudeSet=NO;unsigned duration=3000,toneChannel=0;double toneAmplitude=0.00025;
         for(int i=1;i<argc;i++) {
-            if(!strcmp(argv[i],"--stream-silence"))stream=YES;
+            if(!strcmp(argv[i],"--stream-silence"))stream=silenceSet=YES;
+            else if(!strcmp(argv[i],"--stream-tone") && i+1<argc) {
+                char *end;unsigned long n=strtoul(argv[++i],&end,10);
+                if(!*argv[i] || *end || n<1 || n>4 || toneChannel)return 2;
+                toneChannel=(unsigned)n;stream=YES;
+            } else if(!strcmp(argv[i],"--tone-amplitude") && i+1<argc) {
+                amplitudeSet=YES;char *end;toneAmplitude=strtod(argv[++i],&end);
+                if(!*argv[i] || *end || !isfinite(toneAmplitude) || toneAmplitude<0 || toneAmplitude>CAIAQ_MAX_AMPLITUDE)return 2;
+            }
             else if(!strcmp(argv[i],"--duration-ms") && i+1<argc) {
                 char *end;unsigned long n=strtoul(argv[++i],&end,10);
                 if(!*argv[i] || *end || n<100 || n>3000)return 2;duration=(unsigned)n;
@@ -370,15 +392,19 @@ int main(int argc,const char **argv) {
                 zeroAtStart=!strcmp(name,"start");
             } else if(!strcmp(argv[i],"--buffer-guard") && i+1<argc) {
                 const char *n=argv[++i];if(strcmp(n,"0") && strcmp(n,"1"))return 2;guard=(unsigned)(n[0]-'0');
-            } else {fprintf(stderr,"Usage: %s [--run|--dry-run|--discover] [--stream-silence --duration-ms 100..3000] [--layout observed|rx|PROFILE] [--zero-offset start|compact] [--buffer-guard 0|1]\n",argv[0]);return 2;}
+            } else {fprintf(stderr,"Usage: %s [--run|--dry-run|--discover] [--stream-silence --duration-ms 100..3000 | --stream-tone 1..4 --tone-amplitude 0..0.001] [--layout observed|rx|PROFILE] [--zero-offset start|compact] [--buffer-guard 0|1]\n",argv[0]);return 2;}
         }
+        if(amplitudeSet && !toneChannel) {fprintf(stderr,"tone-amplitude requires stream-tone\n");return 2;}
+        if(toneChannel && silenceSet) {fprintf(stderr,"silence and tone are mutually exclusive\n");return 2;}
+        if(toneChannel && duration!=3000) {fprintf(stderr,"tone test requires fixed 3000ms session\n");return 2;}
         if(stream && (layoutSet || !zeroAtStart || guard!=1 || discover)) {
             fprintf(stderr,"stream-silence requires RX lengths, zero-offset=start, buffer-guard=1; excludes discover/layout\n");return 2;
         }
         setvbuf(stdout,NULL,_IOLBF,0);
-        printf("NATIVE CONFIG hardware=%s layout=%s zero-offset=%s backing-guard=%u (not transmitted), PCM=silence, mode=%s\n",
-            run?"ENABLED":"disabled",(profile<0 || stream)?"rx":caiaq_probe_names[profile],zeroAtStart?"start":"compact",guard,stream?"bounded RX stream":"one batch");
-        if(stream)printf("NATIVE CONFIG stream=silence duration_ms=%u (hard maximum 3000)\n",duration);
+        printf("NATIVE CONFIG hardware=%s layout=%s zero-offset=%s backing-guard=%u (not transmitted), PCM=%s, mode=%s\n",
+            run?"ENABLED":"disabled",(profile<0 || stream)?"rx":caiaq_probe_names[profile],zeroAtStart?"start":"compact",guard,toneChannel?"EXPLICIT TONE":"silence",stream?"bounded RX stream":"one batch");
+        if(toneChannel)printf("NATIVE CONFIG tone_channel=%u amplitude=%.8f (ceiling=0.001), 0.5s silence / 1s 440Hz / silence\n",toneChannel,toneAmplitude);
+        if(stream)printf("NATIVE CONFIG stream=%s duration_ms=%u (hard maximum 3000)\n",toneChannel?"tone":"silence",duration);
         if(discover) {
             if(run) {fprintf(stderr,"--discover excludes --run\n");return 2;}
             io_service_t service=caiaq_native_find_interface();
@@ -389,7 +415,7 @@ int main(int argc,const char **argv) {
         }
         if(!run)return 0;
         signal(SIGINT,on_signal);signal(SIGTERM,on_signal);
-        KoreNativeProbe *probe=[KoreNativeProbe new];probe->profile=profile;probe->zeroAtStart=zeroAtStart;probe->guardBytes=guard;probe->streamMode=stream;probe->streamDurationMs=duration;
+        KoreNativeProbe *probe=[KoreNativeProbe new];probe->profile=profile;probe->zeroAtStart=zeroAtStart;probe->guardBytes=guard;probe->streamMode=stream;probe->streamDurationMs=duration;probe->toneChannel=toneChannel;probe->toneAmplitude=toneAmplitude;
         int rc=1;
         if([probe open]) {
             const unsigned char info[]={1},params[]={9,1,2,176,0,1};
