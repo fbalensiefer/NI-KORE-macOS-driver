@@ -1,3 +1,6 @@
+> Current entry point: [status](docs/STATUS.md) and [setup](README-SETUP.md).
+> This file is a preserved historical handoff.
+
 > Historical research/handoff snapshot, superseded on November 2, 2026.
 > See the repository README and current native playback results. Old command
 > examples and status statements below are retained as evidence, not current instructions.

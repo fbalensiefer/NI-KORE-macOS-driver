@@ -21,4 +21,15 @@ static inline void kore_test_signal(uint64_t index,int stereo,float values[2]) {
         values[1]=kore_test_tone(index-168000,660);
     }
 }
+/* 50ms Hann-windowed chirp for detecting delayed copies in the analog path. */
+static inline float kore_echo_pulse(uint64_t index) {
+    if(index>=2400)return 0;
+    double t=index/48000.,duration=.05,slope=(10000.-200.)/duration;
+    double window=.5-.5*cos(6.283185307179586*index/2399.);
+    return (float)(window*sin(6.283185307179586*(200*t+.5*slope*t*t)));
+}
+static inline void kore_echo_signal(uint64_t index,float values[2]) {
+    values[0]=index>=24000?kore_echo_pulse(index-24000):0;
+    values[1]=index>=72000?kore_echo_pulse(index-72000):0;
+}
 #endif

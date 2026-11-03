@@ -1,116 +1,85 @@
 # Native Instruments KORE 1 on macOS
 
-An open-source controller bridge and experimental native USB audio transport for
-the **original KORE 1** (`17cc:4711`) on Apple Silicon macOS.
+Native USB MIDI/audio bridge for the original **KORE 1** (`17cc:4711`) on Apple
+Silicon macOS. Current status: **2026-11-03**. Audio remains experimental.
 
-**Current integration:** a shared native USB MIDI/audio executable and a CoreAudio
-output HAL plug-in now build from the same standalone
-[kore1-final-bridge.c](kore1-final-bridge.c). Explicit commands install the system
-bundle and start the bridge at login. The bridge runs CoreMIDI, controller feedback
-and RX-matched audio concurrently through one USB interface owner.
+[Current status and evidence](docs/STATUS.md) · [Setup](README-SETUP.md) ·
+[Mixxx controls](docs/MIXXX-FX-MAPPING.md) · [Tests](TESTING.md) ·
+[Architecture](ARCHITECTURE.md) · [Protocol](PROTOCOL.md)
 
-The new integration has passed offline callback, queue, controller, HAL ABI and
-rate-matching tests. Its live system/hardware validation must be checked against
-[the validation record](docs/NATIVE-INTEGRATION-VALIDATION.md). The device exposes Main on channels 1/2 and Headphones on 3/4. The login bridge
-uses separate software gains: Main 0.2 (-14 dB), Headphones 1 (0 dB);
-the standalone CLI retains its quiet .00025 default. Reported output latency is
-about 171ms. Application playback gain is separate from the diagnostic tone cap.
-KORE audio input and full-level audio
-qualification are not implemented.
+## What works
 
-The stereo headphone path has now been recorded with independent 440/660Hz
-left/right signals and a dual-channel window. Both channels were detected with
-continuous capture; final installation encountered a CoreAudio initialization
-block requiring a Mac restart and revalidation; see [stereo results and remaining measurement limits](docs/STEREO-OUTPUT-RESULTS.md).
+- One native IOUSBHost process handles USB audio, CoreMIDI and LED/LCD feedback.
+- Installed CoreAudio output: **KORE 1 Experimental Output**, fixed **48kHz**,
+  four float channels: **1/2 Main L/R**, **3/4 Headphones L/R**.
+- Independent Mixxx main output and headphone cueing. Current login gains are
+  Main **0.2** (-14dB) and Headphones **1** (0dB); physical knobs still apply.
+- The **KORE 1 FX + Browser** preset controls filters/effects with eight encoders,
+  browses tracks with the jogwheel, and loads Deck A/B with left/right arrows.
+  Physical Play/Stop are mapped correctly; Backlight cannot start playback.
+- Active/inactive button feedback, fixed encoder/jog illumination, and LCD deck,
+  Play/Stop, BPM and loaded-track status are implemented and installed.
+- The user confirmed Main/headphone playback and the corrected transport/browser
+  mapping. Bounded Main and headphone line captures passed defined checks.
 
-## Build, install and run
+## Open limits
+
+USB deadline failures and service restarts remain unresolved. Short successful
+captures do not establish long-run clock lock, production sound quality or
+frequency response. Reported output latency is about **171ms**.
+
+KORE audio input is not implemented. MAYA44 recording is an external measurement
+path. A reported hollow headset sound may involve its four-pole plug/adapter;
+that physical diagnosis remains unconfirmed. Some measurement attempts clipped
+or had capture gaps and are explicitly excluded from quality conclusions.
+
+Real LCD title/artist display is **deferred by user choice**: Mixxx 2.5.6 lacks
+the Player metadata API used by the mapping. We remain on stable Mixxx 2.5;
+no development Mixxx version or library migration was installed.
+
+## Build and setup
+
+Requires macOS 12+, a current Xcode Command Line Tools SDK with IOUSBHost,
+Python 3 and Node for checks. Compatibility/libusb tools also need pkg-config
+and libusb-1.0. Optional echo diagnostics need NumPy.
 
 ```sh
 make development-package
 make check audio-check native-check coreaudio-check
-./build/kore1-final-bridge --install-system
-./build/kore1-final-bridge --system-status
-./build/kore1-final-bridge --run --coreaudio-pcm --continuous --mixxx-feedback
+# Optional, hardware-free chirp-analyzer checks:
+make echo-check
 ```
 
-Installation requires a macOS administrator dialog and restarts CoreAudio. It
-preserves existing bundles and does not change audio defaults. Optional automatic
-startup: `./build/kore1-final-bridge --install-login`. Run one KORE process at a time.
-See [installation, removal, standalone compilation and Mixxx setup](docs/DEVELOPMENT-PACKAGE.md).
+Builds/checks do not install drivers or open KORE/MAYA44. The generated
+[kore1-final-bridge.c](kore1-final-bridge.c) builds both the native executable
+(Objective-C mode) and HAL bundle (C mode). Current Mixxx files are
+[mixxx/KORE-1.midi.xml](mixxx/KORE-1.midi.xml) and [mixxx/KORE-1.js](mixxx/KORE-1.js).
 
-The complete local archive is `build/KORE1-macOS-development.zip`. Current Mixxx
-files are [mixxx/KORE-1.midi.xml](mixxx/KORE-1.midi.xml) and
-[mixxx/KORE-1.js](mixxx/KORE-1.js). Use `./run-midi.sh` for continuous MIDI alone.
+Fresh installation requires explicit system and login commands; use the
+[setup guide](README-SETUP.md). On the development Mac, the HAL is system-wide
+and the bridge runs from the user Library folder. Update that deployment with
+`python3 automation/install_user_bridge.py --run`; `--defer-restart` stages an
+atomic update without stopping current audio. Do not start another USB owner.
 
-## Build
+The local archive is `build/KORE1-macOS-development.zip`. It contains compiled
+components, standalone source, current mapping, guides and a SHA256 manifest.
+It is architecture-specific and is not a signed/notarized production release.
 
-Requires macOS 12 or later, a current Xcode Command Line Tools SDK including
-IOUSBHost.framework, and a C/Objective-C compiler. The libusb/controller builds
-also require `pkg-config` and `libusb-1.0` (for example, installed with Homebrew).
+## Documentation and source
 
-```sh
-make all audio native-probe
-make check audio-check native-check
-```
+- [Documentation index](docs/INDEX.md): current guides versus historical evidence.
+- [System/development package](docs/DEVELOPMENT-PACKAGE.md): installation, removal,
+  manual commands and full build details.
+- [Stereo measurements](docs/STEREO-OUTPUT-RESULTS.md) and
+  [headphone diagnostics](docs/HEADPHONE-DIAGNOSTICS.md).
+- [Remaining work](docs/NEXT-STEPS.md) and [changelog](CHANGELOG.md).
+- `audio/`: native USB/control engine and framing; `coreaudio/`: HAL, PCM queues,
+  shared ASRC and measurement clients; `mixxx/`: active mapping.
+- `src/kore-midi-v10.c`: maintained controller decoder and compatibility bridge;
+  generated `audio/controller_engine.h` embeds it in the native owner.
+- `tests/` and `automation/`: offline checks, packaging and opt-in measurement tools.
+- Root v10 mapping files and `experimental/legacy-libusb/` preserve earlier work.
+  They are not the active preset. Build outputs, WAVs and logs stay ignored.
 
-Builds and checks do **not** open hardware. Tests include deterministic PCM vectors,
-channel isolation and tone timing, native transaction layouts, callback ownership,
-late cancellation, bounded transfer pools, and synthetic capture analysis. Native
-C/Objective-C tests use AddressSanitizer and UndefinedBehaviorSanitizer.
-
-## Controller bridge
-
-```sh
-./build/kore-midi-v10 --mixxx-feedback
-```
-
-Creates MIDI source `KORE 1 Bridge` and opt-in destination `KORE 1 Feedback`.
-Default mappings: relative CC20–27 for encoders, notes36–67 for buttons,
-CC40–42 for analog controls. Current Mixxx mappings are in `mixxx/`; the root `KORE-1-Mixxx-v10.*` files are preserved for compatibility.
-See [architecture](ARCHITECTURE.md), [protocol](PROTOCOL.md) and [testing](TESTING.md).
-
-## Native audio diagnostics
-
-The isolated native probe and legacy libusb tools require exclusive interface 0
-access. Run only one KORE process at a time. Use the final bridge above for
-simultaneous MIDI/audio; the probe remains a separate diagnostic tool.
-
-Hardware-free option validation and read-only registry discovery:
-
-```sh
-./build/kore1-native-probe --dry-run --stream-silence
-./build/kore1-native-probe --discover
-```
-
-With speakers/headphones disconnected and output gain minimized, this explicit
-hardware command runs bounded encoded silence:
-
-```sh
-./build/kore1-native-probe --run --stream-silence --duration-ms 3000
-```
-
-Tone output is opt-in, single-channel, capped and limited to one second inside a
-three-second session. Follow the [recorded playback notes](docs/TONE-PLAYBACK-RESULTS.md)
-and use a verified line-input capture connection before enabling it. The native
-transport is experimental: successful USB requests alone do not establish analog
-playback, and current recordings do not establish production audio quality.
-
-## Documentation and source layout
-
-- [Native transport and discovery](docs/NATIVE-TRANSPORT.md)
-- [Continuous streaming tests and scheduling limits](docs/NATIVE-STREAM-RESULTS.md)
-- [Analog playback measurements and capture limitations](docs/TONE-PLAYBACK-RESULTS.md)
-- [Linux parity, legacy submission failure and investigation](docs/AUDIO-VALIDATION.md)
-- [Gap-free capture and clock measurements](docs/CAPTURE-CONTINUITY.md)
-- [Local CoreAudio output prototype](docs/COREAUDIO-PROTOTYPE.md)
-- [Adaptive rate matching and its limits](docs/RATE-MATCHING.md)
-- [Next development steps](docs/NEXT-STEPS.md)
-- `audio/`: shared framing, native IOUSBHost transport, discovery and capped tone generator.
-- `src/`: controller bridge; `tests/` and `automation/`: offline checks and explicit hardware tools.
-- `kore1-bridge-audio.c`: tested libusb diagnostic bridge; native transport is the preferred audio development path.
-- `kore1-bridge.c`, `build.sh`, `run-midi.sh`: retained compatibility bridge/build entry points.
-- [Historical experiment archive](experimental/legacy-libusb/README.md): preserved snapshots, not recommended hardware commands.
-- `build/`, `artifacts/`, captures, logs and the local Actions runner are ignored.
-
-GPL licensing and attribution are retained; see [COPYING](COPYING) and
-[NOTICE.md](NOTICE.md). No proprietary firmware is included.
+GPL licensing/provenance: [COPYING](COPYING), [NOTICE.md](NOTICE.md).
+No proprietary firmware is included; no vendor endorsement is implied.

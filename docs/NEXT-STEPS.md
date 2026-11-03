@@ -1,29 +1,39 @@
-# Next development steps
+# Remaining work — 2026-11-03
 
-As of November 2, 2026, repeated native streaming and analog playback are verified.
-Direct HAL MAYA44 capture now stores exactly ten seconds with zero timestamp gaps.
-Short relative measurements suggest a KORE clock about +200 ppm versus the host.
-See [capture/clock evidence](CAPTURE-CONTINUITY.md).
+Implemented integration and completed milestones are in [STATUS](STATUS.md).
+CoreAudio is installed; one native owner already handles MIDI/audio together.
+The earlier offline-only installation restriction was superseded by explicit
+installation authorization and is not the current plan.
 
-1. **Keep the CoreAudio output prototype local**, as requested. A signed bundle,
-   PCM property IPC, realtime-safe queue, native prefetch/packer and render client
-   build and pass offline tests. Real HAL loading and application compatibility
-   remain unverified; installation requires fresh approval.
-2. **Validate the implemented adaptive rate matcher before sustained playback.**
-   It passes 15 simulated minutes and a bounded hardware PCM run. The current
-   linear interpolator needs full-band DSP evaluation; three-second live tests
-   do not establish long-duration clock lock. See [rate matching](RATE-MATCHING.md).
-3. **Improve analog measurement SNR.** At the authorized low level, residual noise
-   is about 6 dB above tone RMS. Do not infer a DAC distortion/dynamic-range spec
-   from that measurement or automatically alter physical gain.
-4. **Validate host integration and routing** when installation is authorized. Use
-   the gap-free recorder and the capped virtual-output render test. Confirm app
-   format negotiation, underrun/overflow behavior, timestamps and clean teardown.
-5. **Unify interface ownership** before simultaneous MIDI and audio; native USB
-   and the compatibility libusb controller still require exclusive interface 0.
-6. **Implement KORE input PCM capture** only after validating its alignment/check
-   state. MAYA44 capture is a measurement path, not KORE audio-input support.
+1. **Fix sustained USB scheduling failures.** Preserve evidence of deadline
+   misses and service restarts; distinguish host stalls, device clocks and callback
+   latency. Do not hide misses with timeline rebasing or silently dropped packets.
+2. **Qualify sustained PCM/ASRC and audio quality.** Short captures and simulated
+   clock offsets are not long-run hardware lock, distortion or full-band DSP tests.
+   Validate the linear interpolator and latency before claiming production quality.
+3. **Finish loaded-headphone diagnosis.** The user confirmed a TRRS headset and
+   adapter. Compare a proper TRS headphone/compatible splitter. Treat a contact
+   fault as a hypothesis, not an established repair; account for physical gain.
+4. **Keep measurement rejection strict.** Direct HAL capture still occasionally
+   reports gaps; full-level and ReplayGain-boosted probes clipped. Record test
+   level and physical routing, and exclude invalid runs.
+5. **Implement KORE audio input.** First validate its framing/check state and
+   clock handling. MAYA44 input is only the external measurement path.
+6. **Review release packaging/provenance.** Current builds are local, architecture-
+   specific development artifacts; signing/notarization and the existing licensing
+   review in NOTICE.md remain distinct from successful build checks.
 
-The user authorized bounded KORE silence/tone tests and MAYA44 recording. They
-chose not to install or restart CoreAudio for the new output prototype. No CoreAudio
-server change has been made.
+## Explicitly deferred
+
+The user chose to remain on stable **Mixxx 2.5.6** and defer real LCD title/artist
+metadata. Do not upgrade Mixxx or migrate its library as an assumed next step.
+The prepared 2.7-alpha download was removed without installation/launch. Keep
+independent headphone cueing, the current FX/browser layout and protected loading.
+
+## Verification to retain
+
+User confirmation covers working Main/headphone playback and corrected MIDI
+transport/browser operation. LED changes were accepted after installation;
+individual light positions/brightness are not a calibrated hardware specification.
+Recheck any changed physical mapping and distinguish software regression tests
+from actual user/hardware observations. See [mapping guide](MIXXX-FX-MAPPING.md).

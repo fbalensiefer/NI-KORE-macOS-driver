@@ -1,3 +1,6 @@
+> Status reference (2026-11-03): Historical research findings. Later native playback, CoreAudio integration and bounded line captures supersede early unknown-output statements.
+> See [current status](STATUS.md) and [documentation index](INDEX.md).
+
 > Historical research/handoff snapshot, superseded on November 2, 2026.
 > See the repository README and current native playback results. Old command
 > examples and status statements below are retained as evidence, not current instructions.

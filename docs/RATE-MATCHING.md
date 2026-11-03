@@ -1,3 +1,6 @@
+> Status reference (2026-11-03): Dated ASRC milestone. CoreAudio is now installed, all four playback channels share the matcher, and application gains are no longer the diagnostic tone cap.
+> See [current status](STATUS.md) and [documentation index](INDEX.md).
+
 # Adaptive PCM rate matching — 2026-11-02
 
 ## Implemented, without installing CoreAudio

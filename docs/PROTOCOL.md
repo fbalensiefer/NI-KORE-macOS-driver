@@ -1,3 +1,6 @@
+> Status reference (2026-11-03): Transport-focused reference. Current four-channel publication, wheel/feedback mapping and deployment are summarized in the root protocol/architecture guides.
+> See [current status](STATUS.md) and [documentation index](INDEX.md).
+
 # CAIAQ protocol reference and implementation notes
 
 ## Endpoint map

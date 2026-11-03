@@ -24,13 +24,18 @@ def stop(process):
         try:process.wait(timeout=5)
         except subprocess.TimeoutExpired:process.kill();process.wait();raise RuntimeError('Forced teardown; run is invalid')
 def main():
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--run-tone',action='store_true');p.add_argument('--stereo-test',action='store_true');p.add_argument('--headphones',action='store_true');p.add_argument('--use-login-bridge',action='store_true');p.add_argument('--pcm-gain',type=float,default=None);args=p.parse_args()
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--run-tone',action='store_true');p.add_argument('--stereo-test',action='store_true');p.add_argument('--echo-test',action='store_true');p.add_argument('--headphones',action='store_true');p.add_argument('--signal-level',type=float,default=.1);p.add_argument('--use-login-bridge',action='store_true');p.add_argument('--pcm-gain',type=float,default=None);args=p.parse_args()
+    if args.stereo_test and args.echo_test:p.error('Choose stereo or echo test')
+    if not math.isfinite(args.signal_level) or not 0<args.signal_level<=1:p.error('Signal level must be >0 and <=1')
     if args.use_login_bridge:
         if args.pcm_gain is not None:p.error('Cannot change gain of the installed login bridge')
     else:
         if args.pcm_gain is None:args.pcm_gain=.00025
         if not math.isfinite(args.pcm_gain) or not 0<=args.pcm_gain<=.25:p.error('PCM test gain must be 0..0.25')
     if not args.run_tone:print('Dry run: --run-tone required; no devices opened');return
+    if args.echo_test:
+        try:from analyze_echo_capture import analyze as analyze_echo
+        except ImportError:p.error('Echo analysis requires NumPy; no devices opened')
     folder=ROOT/'artifacts'/('coreaudio-loopback-'+datetime.datetime.now().strftime('%Y%m%d-%H%M%S-%f'));folder.mkdir()
     wav=folder/'maya44.wav';timing=folder/'timing.json';capturelog=folder/'capture.log';bridgelog=folder/'bridge.log';renderlog=folder/'render.log'
     capture=bridge=None
@@ -53,16 +58,18 @@ def main():
             else:
                 bridge=subprocess.Popen([str(BIN/'kore1-final-bridge'),'--run','--coreaudio-pcm','--continuous','--mixxx-feedback','--pcm-gain',str(args.pcm_gain)],stdout=b,stderr=subprocess.STDOUT)
                 wait_ready(bridge,bridgelog,'NATIVE STREAM',6)
-            command=[str(BIN/'kore-coreaudio-render'),'--run','--feedback']
+            command=[str(BIN/'kore-coreaudio-render'),'--run','--feedback','--level',str(args.signal_level)]
             if args.stereo_test:command.append('--stereo-test')
             if args.headphones:command.append('--headphones')
+            if args.echo_test:command.append('--echo-test')
             render=subprocess.run(command,stdout=r,stderr=subprocess.STDOUT,timeout=8)
             stop(bridge)
             if render.returncode or (bridge and bridge.returncode):raise RuntimeError('Render/shared bridge failed')
             if args.use_login_bridge and (agent_state()!=agent_before or error_log.stat().st_size!=error_offset):raise RuntimeError('Login service restarted or logged an error during test')
             if capture.wait(timeout=12):raise RuntimeError('MAYA44 capture failed')
-        result=analyze_stereo(wav,timing) if args.stereo_test else measure(wav,timing,None if args.use_login_bridge else bridgelog)
-        result.update(login_arguments=login_arguments,output_pair='headphones' if args.headphones else 'main',requested_pcm_gain=args.pcm_gain,agent_state=agent_before,bridge_exit=bridge.returncode if bridge else None,use_login_bridge=args.use_login_bridge,render_exit=render.returncode,capture_exit=capture.returncode)
+        if args.echo_test:result=analyze_echo(wav,timing)
+        else:result=analyze_stereo(wav,timing) if args.stereo_test else measure(wav,timing,None if args.use_login_bridge else bridgelog)
+        result.update(signal_level=args.signal_level,login_arguments=login_arguments,output_pair='headphones' if args.headphones else 'main',requested_pcm_gain=args.pcm_gain,agent_state=agent_before,bridge_exit=bridge.returncode if bridge else None,use_login_bridge=args.use_login_bridge,render_exit=render.returncode,capture_exit=capture.returncode)
         (folder/'result.json').write_text(json.dumps(result,indent=2)+'\n')
         print(folder);print(json.dumps(result,indent=2))
         if not result.get('pass',True):raise RuntimeError('Stereo criteria not met; inspect result.json')

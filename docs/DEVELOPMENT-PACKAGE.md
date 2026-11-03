@@ -1,3 +1,6 @@
+> Current package/setup reference, reviewed 2026-11-03. Start with
+> [STATUS](STATUS.md), [quick setup](../README-SETUP.md) and [index](INDEX.md).
+
 # KORE 1 native MIDI/audio bridge and CoreAudio integration
 
 `kore1-final-bridge.c` contains the native USB transport, controller decoding and
@@ -77,7 +80,7 @@ ongoing operation, stopped by Ctrl+C/SIGTERM. It cannot be combined with a bound
 duration or diagnostic tone. To run the actual output bridge after installation:
 
 ```sh
-./build/kore1-final-bridge --run --coreaudio-pcm --continuous --mixxx-feedback
+./build/kore1-final-bridge --run --coreaudio-pcm --continuous --mixxx-feedback --main-gain .2 --headphone-gain 1
 ```
 
 `./run-midi.sh` starts continuous MIDI only. `./run-audio.sh` remains a bounded
@@ -182,15 +185,21 @@ mapping directory (open from Preferences → Controllers). Reload Mixxx, enable
 input `KORE 1 Bridge`, and choose the KORE 1 mapping. These are controller presets,
 not `.mid` music sequences. Existing root v10 mappings remain available.
 
-| Incoming MIDI, channel 1 | Action |
+| Incoming MIDI, channel 1 | Action on selected deck (Control=A, Sound=B) |
 | --- | --- |
-| Relative CC20 / CC21 | Deck A / B volume |
-| Relative CC22 / CC23 | Deck A / B pregain |
-| Relative CC24 / CC25 | Deck A / B pitch rate |
-| Relative CC26 / CC27 | Crossfader / master gain |
-| Notes36 / 38 | Select A / B for LCD feedback |
-| Notes37 / 40 | Toggle A / B playback |
-| Notes39 / 41, including Note Off | A / B momentary cue |
+| Relative CC20 | QuickEffect filter superknob |
+| Relative CC21 / CC22 | FX unit dry/wet / superknob |
+| Relative CC23–25 | FX slot 1–3 metaknobs |
+| Relative CC26 / CC27 | Slot 1 / 2 first parameter (normalized) |
+| Relative CC28 (new bridge required) | Jogwheel: library track selection |
+| Note50 / Note51 | Real Play toggle / Stop |
+| Note41, including Note Off | Esc: momentary cue |
+| Note39 | Enter: load selected track only into a stopped deck |
+| Notes47 / 44 | Left/right: load selected track into stopped Deck A / B |
+| Note48 | Listen: headphone PFL |
+| Note37 | LCD backlight; no playback binding |
+
+See [the FX/browser guide](MIXXX-FX-MAPPING.md) for softkeys, presets and tests.
 
 Relative values 1–63 increment, 65–127 decrement; zero is idle. Other buttons and
 analog CCs are available for custom mappings. Metadata is optional if
@@ -215,3 +224,27 @@ bridge after stopping the login agent; it never changes a running service's gain
 
 Mixxx XML route names and zero-based channel indices follow the upstream
 [AudioOutput serializer](https://github.com/mixxxdj/mixxx/blob/main/src/soundio/soundmanagerutil.cpp).
+
+## Headphone diagnosis
+
+The loopback helper's test signal now defaults to 0.1 (-20 dB), independently of
+bridge gains. `--signal-level` selects a different explicit test level. The
+optional `--echo-test --headphones` uses short chirps to search for delayed
+replicas; NumPy is required and checked before devices open. `make echo-check`
+runs its hardware-free controls. See [headphone diagnostics](HEADPHONE-DIAGNOSTICS.md)
+for measurements, clipped/invalid runs and the pending physical headset-adapter
+check. The TRRS adapter issue remains a hypothesis, not a verified repair.
+
+## Current deployment and feedback recap
+
+The development Mac runs the user-local bridge alongside the installed HAL.
+Use `automation/install_user_bridge.py --run` for that existing deployment;
+`--defer-restart` replaces the binary without interrupting its current process.
+The helper and preset are included in the package. Do not reset the agent to an
+older system executable when updating only the user-local copy.
+
+Current preset: KORE 1 FX + Browser. Left/right load stopped A/B, the jog browses,
+and encoders/softkeys control selected-deck FX. Buttons have bright/dim feedback;
+encoder/jog illumination is fixed. Reload the mapping to activate script changes.
+The user explicitly retained Mixxx 2.5.6 and deferred real LCD track names; the
+fallback reports loaded state alongside deck/transport/BPM. No alpha was installed.

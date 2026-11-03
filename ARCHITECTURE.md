@@ -1,53 +1,72 @@
-# Architecture
+# Current architecture — 2026-11-03
 
 ```text
-KORE 1 (USB 17CC:4711)
-   │ bulk IN 0x81 / bulk OUT 0x01
-   ▼
-macOS C bridge (libusb)
-   │ decode ERP, IO and analog
-   ├── CoreMIDI virtual source "KORE 1 Bridge" ──► Mixxx MIDI input / JS mapping
-   │
-   └── CoreMIDI virtual destination "KORE 1 Feedback" ◄── Mixxx MIDI output
-                                   │
-                                   └──► LED state (0x0C) / LCD framebuffer (0x08)
+Mixxx / CoreAudio application
+  | 48kHz, four interleaved float channels
+  v
+KoreAudio.driver (isolated CoreAudio driver host)
+  | SPSC PCM ring, PID consumer lease, kpc4 CFData property
+  v
+kore1-final-bridge: prefetch -> local ring -> shared four-channel ASRC
+  | signed24 big-endian, paired CAIAQ streams
+  v
+KORE USB interface 0, alt 1: ISO IN 0x82 -> matched OUT 0x06
+  | Main 1/2 / Headphones 3/4
+  + bulk IN 0x81 -> controller decoding -> CoreMIDI "KORE 1 Bridge" -> Mixxx
+  + bulk OUT 0x01 <- LED/LCD queue <- "KORE 1 Feedback" <- Mixxx mapping
 ```
 
-- The controller itself is not a class-compliant MIDI input; the bridge converts its proprietary USB reports into MIDI.
-- `--mixxx-feedback` is opt-in and creates a **separate** CoreMIDI destination.
-- A Mixxx input mapping does not automatically route MIDI output to that destination.
-- The Mixxx JS mapping sends channel-16 CC feedback and custom 7-bit SysEx strings; see README.
-- Jog wheel relative MIDI output and joystick assignment are not finished.
+One native process owns the interface. Separate serial queues handle ISO/bulk IN,
+MIDI decoding/filter expiry, LED/LCD bulk OUT and PCM property prefetch. Display
+transfers never sleep on the ISO queue. CoreMIDI callbacks enqueue feedback.
+Property IPC, disk access and allocation are outside audio/USB PCM processing.
 
-## Native audio development path
+Continuous mode uses 128 IN / 256 OUT slots with a 128ms OUT scheduling lead;
+bounded diagnostics retain 32 / 64 and 32ms. OUT lengths follow IN completion
+layouts, including empty microframe slots, with explicit valid buffer offsets.
+The frame timeline remains contiguous; late deadlines fail rather than silently
+rebase it. Reconnect selection of USB configuration 1 occurs only if unconfigured.
+Outstanding callbacks must drain or their buffers remain retained until exit.
+These mechanisms do not eliminate the observed long-run deadline failures.
 
-`audio/native_probe.m` owns interface 0 through IOUSBHost.framework (macOS 12+).
-It handles bulk device-info/AUDIO_PARAMS commands and schedules eight ISO
-microframes per batch, using 32 IN and 64 OUT slots on a serial callback queue.
-OUT lengths come from IN completions; zero requests retain their time slots and
-use explicit valid buffer offsets. A fixed 32 ms OUT lead tolerates callback
-jitter without silently changing the timeline. Bounded deadlines and a late
-callback drain protect shutdown ownership.
+## CoreAudio and PCM
 
-`audio/caiaq.h`, `native_plan.h` and `tone.h` share tested framing, buffer plans
-and opt-in capped PCM generation. The native process currently provides neither
-a general application PCM feed nor CoreAudio/MIDI endpoints. It cannot run at
-the same time as the libusb controller process: both require exclusive interface
-ownership. The next integration must share that ownership rather than claim the
-interface from competing processes.
+`coreaudio/plugin.c` exposes one four-channel, output-only 48kHz float32 stream.
+The HAL uses an 8192-frame SPSC ring. The `kown` custom property grants one live
+PID consumer; `kpc4` returns up to 512 four-channel frames as host-marshalled
+CFData. Its distinct selector prevents old stereo clients from misreading frames.
+No shared public file/socket transports PCM. CoreAudio may host the driver in an
+isolated helper process, rather than directly in coreaudiod.
 
-The root compatibility libusb bridge and archived source snapshots are retained
-for research. Current native results, including capture limitations, are linked
-from the README.
+`coreaudio/client.h` prefetches into a native local ring. `rate_match.h` interpolates
+all channels with the same fractional phase and bounded occupancy control, fades
+and re-priming. `pcm_source.h` consumes one frame for both paired USB streams,
+with independent Main/headphone gains and finite saturated signed24 conversion.
+Diagnostic oscillator amplitude limits are separate from application playback.
+Reported device latency/safety offset totals roughly 171ms. Input is not exposed.
 
-## Shared native integration
+## Controller and feedback
 
-The final translation unit conditionally builds either the IOUSBHost/CoreMIDI
-executable (Objective-C) or the CoreAudio HAL bundle (C). Both derive from the same
-modular sources. The native owner has independent serial queues for ISO/bulk IN,
-MIDI decoding/filter expiry, bulk OUT LED/LCD feedback, and CoreAudio PCM prefetch.
-MIDI callback threads only enqueue feedback. UI/display traffic never sleeps on the
-ISO queue. The HAL remains inside coreaudiod and transfers fixed-format PCM via
-host-marshalled custom CFData properties with an exclusive PID consumer lease.
-System installation and login-agent setup are explicit CLI operations, embedded
-in the generated file. They are not invoked by builds or normal playback.
+`src/kore-midi-v10.c` maintains the decoder. Generation removes libusb ownership
+and wraps it in `audio/controller_engine.h` for the native bridge. It emits
+relative CC20–27, wrapped-counter CC28, notes36–67 and analog CC40–42.
+Touch notes are distinct from physical softkeys; the active mapping ignores them.
+
+`mixxx/KORE-1.js` subscribes to Mixxx transport/PFL/FX states, sends cached
+channel-16 LED brightness CCs, and uses 7-bit SysEx for LCD text. Input notes and
+LED state indices are different tables. Encoder/jog lights have fixed brightness.
+The user chose stable Mixxx 2.5: no Player title/artist API is available there;
+LCD loaded-state fallback is intentional, not metadata inference.
+
+## Source, installation and compatibility
+
+`automation/generate_bridge.py` produces `kore1-final-bridge.c`. Compile as
+Objective-C for the executable, or C with `KORE_HAL_PLUGIN` for the HAL. Edit
+maintained modular sources and regenerate; check targets verify reproducibility.
+Explicit system installation stages files outside protected Documents, preserves
+backups and restarts CoreAudio. Builds do not install. The development Mac uses
+an installed HAL plus a user-local login bridge; atomic deferred replacement is
+available without interrupting the current process. See [setup](README-SETUP.md).
+
+Libusb bridges, native probes and historical sources remain separate diagnostics;
+never run them concurrently against the same device as the final bridge.

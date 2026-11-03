@@ -1,5 +1,24 @@
 # Changelog
 
+## Consolidated status — 2026-11-03
+
+- Shared native MIDI/audio bridge and installed four-channel 48kHz HAL output;
+  Main 1/2 at gain 0.2, independent headphones 3/4 at gain 1.
+- Current deployment uses a user-local bridge and system HAL; atomic deferred
+  bridge updates avoid interrupting audio. The standalone CLI stays quiet by default.
+- Active Mixxx preset: KORE 1 FX + Browser. Encoders/softkeys operate FX, jog browses,
+  arrows load stopped A/B, physical Play/Stop are corrected, and feedback includes
+  bright/dim button states with fixed encoder/jog illumination.
+- Stable Mixxx 2.5.6 retained by user choice; real LCD title/artist remains deferred.
+  Deck, transport, BPM and loaded status remain available.
+- Preserve valid Main/headphone line measurements and rejected clipped/gapped runs.
+  USB restarts, loaded-headphone diagnosis, sustained quality and KORE input stay open.
+- Consolidate current setup, architecture, tests and next steps; index dated
+  records separately. Preserve original measurements and immutable archive hashes.
+
+The dated entries below record the state at each milestone, including restrictions
+and defaults later superseded. See [current status](docs/STATUS.md).
+
 ## 0.10.0 — 2026-11-01
 
 - Baseline repository for KORE 1 macOS CoreMIDI bridge.
@@ -96,3 +115,34 @@ Prior development occurred as standalone `kore-midi-v3` through `v9` prototypes 
   Headphones 1. Keep diagnostic tone caps and the quiet standalone CLI default.
 - Verify Main stereo at gains 0.1/0.2 against the user's known MAYA44 wiring;
   document capture-start timeout and unverified analog headphone unity level.
+
+### Headphone diagnostics
+
+- Add independent test-signal level and default loopback probes to 0.1 to reduce
+  capture clipping; keep installed playback gain and independent cue routing.
+- Add optional NumPy matched-chirp analysis and offline injected-echo, clipping,
+  metadata and capture-gap controls, with dependency preflight before hardware.
+- Record passed low-level headphone measurements and rejected/clipped Mixxx
+  attempts; document the unconfirmed four-pole headset adapter hypothesis.
+
+### FX/browser MIDI mapping
+
+- Correct physical Play to note 50 and Stop to 51; Backlight 37 and knob-touch
+  notes have no transport action. Select decks with Control/Sound or left/right.
+- Map eight encoders and softkeys to selected-deck QuickEffect and FX controls;
+  add protected track loading, PFL and cue release tracking across deck changes.
+- Emit wheel CC28 from KORE's wrapped 8-bit IO counter; add native decoder and
+  mapping regression tests, and install the preset in the user controller folder.
+
+- Follow-up: left/right arrow buttons now directly load the selected library track
+  into Deck A/B and select that deck, while protecting a playing destination.
+
+### LED feedback and honest LCD fallback
+
+- Observe selected-deck transport, PFL, FX and routing changes for bright/dim
+  button feedback, including changes made in Mixxx; light momentary actions.
+- Keep all eight encoder rings and jog illumination on; initialize these in the
+  native bridge and the mapping. Cache unchanged feedback and clean up listeners.
+- Show loaded status on Mixxx 2.5 instead of falsely implying NO TRACK. Real
+  title/artist requires the later Player API; the user chose to defer that change.
+- Add atomic user-bridge updates that defer restart to avoid interrupting audio.

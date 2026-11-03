@@ -1,3 +1,6 @@
+> Status reference (2026-11-03): Dated bounded native-tone measurements, not a current application-gain or long-run-quality specification.
+> See [current status](STATUS.md) and [documentation index](INDEX.md).
+
 # First recorded KORE1 analog playback — 2026-11-02
 
 ## What was verified

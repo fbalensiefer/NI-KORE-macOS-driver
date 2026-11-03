@@ -1,3 +1,6 @@
+> Status reference (2026-11-03): Chronological measurements: earlier stereo-only modes, gains and unresolved startup states were later superseded. Read later addenda and current status before reproducing a run.
+> See [current status](STATUS.md) and [documentation index](INDEX.md).
+
 # Stereo output validation — 2026-11-02
 
 The KORE headphone output was connected to the MAYA44 analog inputs. The test
@@ -189,3 +192,20 @@ currently passing or that sustained quality has been qualified.
 Offline checks passed: check, audio-check, native-check and coreaudio-check,
 including four-channel wire vectors with distinct gains/zeroed pairs. The ASRC
 clock simulations were also rerun with four channels for 15 simulated minutes.
+
+### Reboot revalidation
+
+After the user restarted the Mac, CoreAudio initialization returned promptly:
+48kHz, four output channels, 16 bytes/frame; MAYA44 exposed all four input
+channels. The installed-login-service run `20261102-212917-381219` passed with
+Main gain 0.2 and headphone gain 1. All 441000 capture frames were contiguous,
+with zero clipped samples and no suspect amplitude windows. Measured Main peaks
+were L -7.887 dBFS -> input 2, R -8.560 dBFS -> input 1; solo/dual differences
+were under 0.003 dB. PID 1489 / run count 5 stayed unchanged during the run and
+the error log did not grow. Thus the final installed Main path is now verified.
+
+The reboot clears the previous initialization blocker, not the USB scheduling
+issue: the initial post-reboot service snapshot already showed run count 4 and
+last exit code 1, and it restarted again before the measured test interval.
+No long-run stability claim follows from this ten-second capture. The elevated
+analog headphone level remains unmeasured with the Main-only loopback cable.

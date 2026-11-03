@@ -151,3 +151,10 @@ build/test-stereo-signal: tests/test_stereo_signal.c coreaudio/test_signal.h
 build/test-stereo-pcm: tests/test_stereo_pcm.c coreaudio/pcm_source.h coreaudio/rate_match.h coreaudio/pcm_ring.h audio/caiaq.h
 	@mkdir -p build
 	$(CC) -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined -o $@ $< -lm
+
+# Optional NumPy diagnostic; never opens hardware.
+.PHONY: echo-check
+echo-check: build/kore-coreaudio-render build/test-stereo-signal
+	./build/test-stereo-signal
+	python3 tests/test_render_cli.py
+	python3 automation/test_echo_analyzer.py

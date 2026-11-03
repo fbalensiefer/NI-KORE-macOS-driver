@@ -17,10 +17,17 @@ shutil.copytree(ROOT/'build/KoreAudio.driver',DEST/'KoreAudio.driver')
 shutil.copytree(ROOT/'mixxx',DEST/'mixxx')
 for name in ('kore1-final-bridge.c','COPYING','NOTICE.md'):
     shutil.copy2(ROOT/name,DEST/name)
-shutil.copy2(ROOT/'docs/DEVELOPMENT-PACKAGE.md',DEST/'README.md')
-shutil.copy2(ROOT/'docs/STEREO-OUTPUT-RESULTS.md',DEST/'STEREO-OUTPUT-RESULTS.md')
+# Preserve documentation hierarchy so relative links work in the extracted zip.
+for path in ROOT.glob('*.md'):
+    shutil.copy2(path,DEST/path.name)
+shutil.copytree(ROOT/'docs',DEST/'docs')
+shutil.copytree(ROOT/'experimental/legacy-libusb',DEST/'experimental/legacy-libusb')
+readme=DEST/'README.md'
+readme.write_text('> Extracted development archive: runtime binaries are in this folder, so omit\n'
+                  '> `build/` from tool paths. `make` commands require the source checkout; see\n'
+                  '> [standalone compilation](docs/DEVELOPMENT-PACKAGE.md).\n\n'+readme.read_text())
 (DEST/'automation').mkdir()
-for name in ('coreaudio_loopback.py','analyze_stereo_capture.py','measure_native_quality.py','analyze_native_capture.py'):
+for name in ('coreaudio_loopback.py','analyze_stereo_capture.py','measure_native_quality.py','analyze_native_capture.py','analyze_echo_capture.py','install_user_bridge.py'):
     shutil.copy2(ROOT/'automation'/name,DEST/'automation'/name)
 commit=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()
 dirty=bool(subprocess.check_output(['git','status','--porcelain'],cwd=ROOT,text=True).strip())
