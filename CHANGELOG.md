@@ -117,3 +117,13 @@ Prior development occurred as standalone `kore-midi-v3` through `v9` prototypes 
 
 - Follow-up: left/right arrow buttons now directly load the selected library track
   into Deck A/B and select that deck, while protecting a playing destination.
+
+### LED feedback and honest LCD fallback
+
+- Observe selected-deck transport, PFL, FX and routing changes for bright/dim
+  button feedback, including changes made in Mixxx; light momentary actions.
+- Keep all eight encoder rings and jog illumination on; initialize these in the
+  native bridge and the mapping. Cache unchanged feedback and clean up listeners.
+- Show loaded status on Mixxx 2.5 instead of falsely implying NO TRACK. Real
+  title/artist requires the later Player API; the user chose to defer that change.
+- Add atomic user-bridge updates that defer restart to avoid interrupting audio.

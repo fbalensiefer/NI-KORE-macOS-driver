@@ -2,15 +2,27 @@
 const assert=require('assert'), fs=require('fs'), vm=require('vm');
 const values=new Map(), sent=[], signals=[], connections=[];
 function signal(){const callbacks=new Set();const s={connect:f=>callbacks.add(f),disconnect:f=>callbacks.delete(f),callbacks};signals.push(s);return s;}
-const players=[0,1].map(()=>({title:'Test',artist:'Artist',titleChanged:signal(),artistChanged:signal()}));
+const players=[0,1].map(()=>({title:'Test',artist:'Artist',titleChanged:signal(),artistChanged:signal(),trackUnloaded:signal()}));
 const engine={getValue:(g,k)=>values.get(g+'/'+k)||0,setValue:(g,k,v)=>values.set(g+'/'+k,v),
  getPlayer:g=>players[g==='[Channel1]'?0:1],
  getParameter:(g,k)=>values.get(g+'/'+k)||0,setParameter:(g,k,v)=>values.set(g+'/'+k,v),
- makeConnection:(g,k,f)=>{const c={disconnected:false,disconnect(){this.disconnected=true;}};connections.push(c);return c;}};
+ makeConnection:(g,k,f)=>{const c={group:g,key:k,callback:f,disconnected:false,disconnect(){this.disconnected=true;}};connections.push(c);return c;}};
 const context={engine,midi:{sendShortMsg:(...m)=>sent.push(m),sendSysexMsg:(m,n)=>{assert.equal(m.length,n);sent.push(m);}},
  script:{toggleControl:(g,k)=>engine.setValue(g,k,engine.getValue(g,k)?0:1)}};
 vm.createContext(context);vm.runInContext(fs.readFileSync('mixxx/KORE-1.js','utf8'),context);
 const k=context.Kore1;k.init();
+function lastLed(index){return sent.filter(m=>m.length===3 && m[0]===0xbf && m[1]===index).slice(-1)[0][2];}
+for(let index of [10,14,2,6,9,13,1,5,25])assert.equal(lastLed(index),64);
+assert.equal(lastLed(26),127);assert.equal(lastLed(31),8);
+let count=sent.length;k.refreshLights();assert.equal(sent.length,count); // unchanged values are not retransmitted
+engine.setValue('[Channel1]','pfl',1);connections.find(c=>c.group==='[Channel1]' && c.key==='pfl').callback(1);
+assert.equal(lastLed(17),127);
+engine.setValue('[Channel1]','pfl',0);connections.find(c=>c.group==='[Channel1]' && c.key==='pfl').callback(0);
+assert.equal(lastLed(17),8);
+engine.setValue('[EffectRack1_EffectUnit1_Effect1]','enabled',1);
+connections.find(c=>c.group==='[EffectRack1_EffectUnit1_Effect1]' && c.key==='enabled').callback(1);
+assert.equal(lastLed(12),127);
+
 k.encoder(0,20,63);assert.equal(engine.getValue('[QuickEffectRack1_[Channel1]]','super1'),63/250);
 k.encoder(0,20,127);assert.equal(engine.getValue('[QuickEffectRack1_[Channel1]]','super1'),0);
 k.button(0,37,100,0x90);assert.equal(engine.getValue('[Channel1]','play'),0); // backlight
@@ -45,7 +57,17 @@ for(const [note,deck] of [[47,1],[44,2]]) {
 }
 k.sendText(1,1,'é'.repeat(100));const text=sent[sent.length-1];assert.equal(text.length,57);assert(text.slice(6,-1).every(x=>x===63));
 for(const msg of sent){assert(msg.every(x=>Number.isInteger(x)&&x>=0&&x<=255));if(msg.length===3){assert.equal(msg[0],0xbf);assert(msg[1]<128&&msg[2]<128);}}
+// Metadata changes are forwarded for inactive decks, cached, then cleared on unload.
+players[0].title='A New Track';for(const fn of players[0].titleChanged.callbacks)fn(players[0].title);
+let metadata=sent.filter(m=>m[0]===0xf0 && m[4]===0 && m[5]===1).slice(-1)[0];
+assert.equal(String.fromCharCode(...metadata.slice(6,-1)),'A New Track');
+players[0].title='';players[0].artist='';for(const fn of players[0].trackUnloaded.callbacks)fn();
+metadata=sent.filter(m=>m[0]===0xf0 && m[4]===0 && m[5]===1).slice(-1)[0];assert.equal(metadata.length,7);
+k.sendText(0,1,'A New Track');let previous=sent.length;k.sendText(0,1,'A New Track');assert.equal(sent.length,previous);
+k.sendText(0,1,'Grüße');metadata=sent[sent.length-1];assert.equal(String.fromCharCode(...metadata.slice(6,-1)),'Gruesse');
 k.shutdown();assert(connections.every(c=>c.disconnected));assert(signals.every(s=>s.callbacks.size===0));
 // Metadata support is optional; basic controls must still initialize without it.
-delete engine.getPlayer;k.init();k.shutdown();
+delete engine.getPlayer;engine.setValue('[Channel2]','track_loaded',1);k.init();
+metadata=sent.filter(m=>m[0]===0xf0 && m[4]===1 && m[5]===1).slice(-1)[0];
+assert.equal(String.fromCharCode(...metadata.slice(6,-1)),'TRACK LOADED');k.shutdown();
 console.log('Mixxx controls, cue release, feedback bounds and callback cleanup passed');

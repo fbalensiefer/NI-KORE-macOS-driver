@@ -562,6 +562,8 @@ static int feedback_pump(void) {
     return 0;
 }
 static int feedback_initialize(void) {
+    const unsigned rings[]={10,14,2,6,9,13,1,5,25};
+    for(unsigned i=0;i<sizeof(rings)/sizeof(rings[0]);i++)feedback_leds[rings[i]]=32;
     feedback_leds[30]=(unsigned char)((lcd_backlight_pct*127+50)/100);
     if(led_send_state(feedback_leds)) return -1;
     if(lcd_initialize()) return -1;

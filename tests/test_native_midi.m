@@ -3,6 +3,10 @@
 #include <assert.h>
 static unsigned events;
 static unsigned char messages[64][3];
+static unsigned char led_frame[33];
+static int recorded_feedback(void *context,const unsigned char *bytes,int count) {
+    (void)context;if(count==33 && bytes[0]==0x0c)memcpy(led_frame,bytes,33);return 0;
+}
 static OSStatus recorded_midi(MIDIEndpointRef endpoint,const MIDIPacketList *list) {
     assert(endpoint==1 && list->numPackets==1 && list->packet[0].length==3);
     assert(events<64);memcpy(messages[events++],list->packet[0].data,3);return 0;
@@ -61,5 +65,10 @@ int main(void) {@autoreleasepool {
     dispatch_semaphore_signal(blocked);source=0;
     assert([probe stop] && !probe->bulkPending);
     pipe->buffer=nil;probe->bulkIn=nil;
+    controller_send=recorded_feedback;
+    assert(!feedback_initialize());
+    unsigned rings[]={10,14,2,6,9,13,1,5,25};
+    for(unsigned i=0;i<sizeof(rings)/sizeof(rings[0]);i++)assert(led_frame[1+rings[i]]==32);
+    controller_send=NULL;
     puts("PASS shared native MIDI: bulk ownership, timeout rearm, note press/release, independent feedback queue, cancellation");
 }}

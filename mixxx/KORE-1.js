@@ -8,13 +8,38 @@ Kore1.deck = 0; // 0=A 1=B
 Kore1.connections = [];
 Kore1.players = [];
 Kore1.metadataConnections = [];
+Kore1.ledCache = {};
+Kore1.held = {};
+Kore1.textCache = {};
 Kore1.clamp = function(v,lo,hi) { return Math.max(lo,Math.min(hi,v)); };
 Kore1.sendCC = function(cc,value) {
     midi.sendShortMsg(0xBF,cc,Kore1.clamp(Math.round(value),0,127));
 };
+Kore1.led = function(index,on) {
+    var value=on?127:8;
+    if(Kore1.ledCache[index]!==value){Kore1.sendCC(index,value);Kore1.ledCache[index]=value;}
+};
+Kore1.refreshLights = function() {
+    var group=Kore1.deckGroup(),unit=Kore1.unit();
+    Kore1.led(21,engine.getValue(group,'play')>0);
+    Kore1.led(23,!engine.getValue(group,'play'));
+    Kore1.led(17,engine.getValue(group,'pfl')>0);
+    Kore1.led(26,Kore1.deck===0);Kore1.led(31,Kore1.deck===1);
+    Kore1.led(8,engine.getValue('[QuickEffectRack1_'+group+']','enabled')>0);
+    for(var slot=1;slot<=3;slot++)Kore1.led([0,12,0,4][slot],engine.getValue(unit.slice(0,-1)+'_Effect'+slot+']','enabled')>0);
+    Kore1.led(11,engine.getValue(unit,'enabled')>0);
+    Kore1.led(15,engine.getValue(unit,'group_'+group+'_enable')>0);
+    var momentary={39:24,41:29,44:22,45:20,46:16,47:18,56:7,57:3};
+    Object.keys(momentary).forEach(function(note){Kore1.led(momentary[note],!!Kore1.held[note]);});
+};
 Kore1.sendText = function(deck,field,string) {
     var data=[0xF0,0x7D,0x4B,0x01,deck,field];
-    string=String(string || '').substring(0,50);
+    string=String(string || '').replace(/ä/g,'ae').replace(/ö/g,'oe').replace(/ü/g,'ue')
+        .replace(/Ä/g,'AE').replace(/Ö/g,'OE').replace(/Ü/g,'UE').replace(/ß/g,'ss');
+    string=string.substring(0,50);
+    var cacheKey=deck+':'+field;
+    if(Kore1.textCache[cacheKey]===string)return;
+    Kore1.textCache[cacheKey]=string;
     for(var i=0;i<string.length;i++) {
         var code=string.charCodeAt(i);
         data.push(code>=32 && code<=126 ? code : 63);
@@ -31,10 +56,9 @@ Kore1.updateHeader = function() {
     var bpm10=Kore1.clamp(Math.round(bpm*10),0,16383);
     Kore1.sendCC(42,(bpm10>>7)&127);
     Kore1.sendCC(43,bpm10&127);
-    Kore1.sendText(Kore1.deck,1,p ? p.title : '');
+    Kore1.sendText(Kore1.deck,1,p ? p.title : (engine.getValue(g,'track_loaded')?'TRACK LOADED':''));
     Kore1.sendText(Kore1.deck,2,p ? p.artist : '');
-    Kore1.sendCC(21,engine.getValue(g,'play')>0?127:0);
-    Kore1.sendCC(23,engine.getValue(g,'play')>0?0:127);
+    Kore1.refreshLights();
 };
 // Linux caiaq/input.c KORE key order: 37=backlight, 50=play, 51=stop.
 Kore1.pressed = function(value,status) { return value>0 && (status&0xF0)!==0x80; };
@@ -43,6 +67,8 @@ Kore1.deckGroup = function() { return '[Channel'+(Kore1.deck+1)+']'; };
 Kore1.unit = function() { return '[EffectRack1_EffectUnit'+(Kore1.deck+1)+']'; };
 Kore1.pulse = function(group,key) { engine.setValue(group,key,1);engine.setValue(group,key,0); };
 Kore1.button = function(channel,control,value,status) {
+    Kore1.held[control]=Kore1.pressed(value,status);
+    Kore1.refreshLights();
     // Esc is momentary cue; release must reach the deck it pressed on.
     if(control===41) {
         if(Kore1.pressed(value,status)) {
@@ -74,6 +100,7 @@ Kore1.button = function(channel,control,value,status) {
         else if(bottom===2)Kore1.pulse(unit,'prev_chain_preset');
         else if(bottom===3)Kore1.pulse(unit,'next_chain_preset');
     }
+    Kore1.refreshLights();
     // Backlight (37), touch notes 60..67, menu and record deliberately unbound.
 };
 Kore1.encoder = function(channel,control,value) {
@@ -96,6 +123,9 @@ Kore1.browse = function(channel,control,value) {
     var delta=Kore1.delta(value);if(delta)engine.setValue('[Playlist]','SelectTrackKnob',delta);
 };
 Kore1.init = function(id,debugging) {
+    Kore1.ledCache={};Kore1.textCache={};Kore1.held={};
+    // LED transport order differs from input note order. Include the large jog ring.
+    [10,14,2,6,9,13,1,5,25].forEach(function(index){Kore1.sendCC(index,64);});
     for(var d=0;d<2;d++) {
         (function(deck) {
             var g='[Channel'+(deck+1)+']';
@@ -108,6 +138,10 @@ Kore1.init = function(id,debugging) {
                 p.artistChanged.connect(artistCallback);
                 Kore1.metadataConnections.push([p.titleChanged,titleCallback]);
                 Kore1.metadataConnections.push([p.artistChanged,artistCallback]);
+                if(p.trackUnloaded && typeof p.trackUnloaded.connect==='function') {
+                    var unloaded=function(){Kore1.sendText(deck,1,'');Kore1.sendText(deck,2,'');};
+                    p.trackUnloaded.connect(unloaded);Kore1.metadataConnections.push([p.trackUnloaded,unloaded]);
+                }
             }
             Kore1.connections.push(engine.makeConnection(g,'play',function(v) {
                 if(deck===Kore1.deck) Kore1.updateHeader();
@@ -115,6 +149,15 @@ Kore1.init = function(id,debugging) {
             Kore1.connections.push(engine.makeConnection(g,'bpm',function(v) {
                 if(deck===Kore1.deck) Kore1.updateHeader();
             }));
+            var unit='[EffectRack1_EffectUnit'+(deck+1)+']';
+            var lights=[[g,'pfl'],['[QuickEffectRack1_'+g+']','enabled'],[unit,'enabled'],[unit,'group_'+g+'_enable']];
+            for(var slot=1;slot<=3;slot++)lights.push([unit.slice(0,-1)+'_Effect'+slot+']','enabled']);
+            lights.forEach(function(route){
+                var connection=engine.makeConnection(route[0],route[1],function(){if(deck===Kore1.deck)Kore1.refreshLights();});
+                if(connection)Kore1.connections.push(connection);
+            });
+            var loaded=engine.makeConnection(g,'track_loaded',function(){if(deck===Kore1.deck)Kore1.updateHeader();});
+            if(loaded)Kore1.connections.push(loaded);
         })(d);
     }
     Kore1.updateHeader();
@@ -129,4 +172,6 @@ Kore1.shutdown = function() {
     }
     Kore1.metadataConnections=[];
     Kore1.players=[];
+    Object.keys(Kore1.ledCache).forEach(function(index){Kore1.sendCC(Number(index),0);});
+    Kore1.ledCache={};Kore1.textCache={};Kore1.held={};
 };

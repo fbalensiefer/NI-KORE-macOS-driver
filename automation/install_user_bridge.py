@@ -4,7 +4,7 @@ import argparse,datetime,hashlib,os,plistlib,shutil,subprocess,time
 from pathlib import Path
 
 def main():
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--run',action='store_true');a=p.parse_args()
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--run',action='store_true');p.add_argument('--defer-restart',action='store_true');a=p.parse_args()
     if not a.run:print('Dry run: --run required; no service/files changed');return
     root=Path(__file__).resolve().parents[1];source=root/'build/kore1-final-bridge' if (root/'build/kore1-final-bridge').is_file() else root/'kore1-final-bridge'
     agent=Path.home()/'Library/LaunchAgents/org.nikore.bridge.plist'
@@ -21,6 +21,12 @@ def main():
     if destination.exists():shutil.copy2(destination,previous)
     temporary=destination.with_suffix('.new');shutil.copy2(source,temporary);temporary.chmod(0o755)
     service=f'gui/{os.getuid()}/org.nikore.bridge';domain=f'gui/{os.getuid()}'
+    if a.defer_restart:
+        if config['ProgramArguments'][0]!=str(destination):
+            temporary.unlink();raise RuntimeError('Deferred replacement requires an already configured user-local bridge')
+        os.replace(temporary,destination)
+        print('User bridge updated atomically; running process unchanged until next service restart:',destination)
+        print('SHA256:',hashlib.sha256(destination.read_bytes()).hexdigest());return
     stopped=False;replaced=False
     try:
         subprocess.run(['launchctl','bootout',service],check=True);stopped=True

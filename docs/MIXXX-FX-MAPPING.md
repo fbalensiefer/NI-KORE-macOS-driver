@@ -99,3 +99,53 @@ Play/Backlight/wheel smoke-test was requested from the user.
 Physical smoke-test feedback: the user confirmed Play/Backlight/wheel operation.
 The later direct arrow-loading change is regression-tested offline and requires
 reloading the script in Mixxx before its physical behavior can be confirmed.
+
+## LED and LCD feedback update
+
+Physical LED indices follow the controller engine's `led_names` table, not the
+input MIDI note numbers. Active states use MIDI brightness 127, inactive states
+8 (dim). The selected deck's Play/Stop, PFL, Control/Sound selection, QuickEffect,
+FX unit, deck routing and each effect-slot enable state are observed through
+Mixxx control connections. Changes made on screen also update the LEDs.
+Navigation, loading, cue and preset buttons light while held. Updates are cached
+to avoid resending unchanged LED values. Shutdown clears status lights.
+
+The eight encoder LEDs (indices 10,14,2,6,9,13,1,5) and large jog LED (25) are
+set to brightness 32/63 at native feedback initialization and MIDI brightness
+64 at script initialization. They stay on independently of effect state and are
+not cleared by mapping shutdown. The existing LCD backlight is left unchanged.
+
+The new script was installed with a backup. The user-local bridge binary was
+replaced atomically with `install_user_bridge.py --run --defer-restart`: the
+running process and audio were not interrupted. Native startup illumination
+therefore takes effect on its next restart; reloading Mixxx activates the script
+illumination immediately. The installed next-start binary hash is
+`2cfe72f42ae554d4ec1ecfd02d83c1fecbcf39302a39b88608dcf72427f3dbec`.
+
+The deferred-install option only replaces an already configured user-local
+bridge; it will not silently rewrite an unrelated launch-agent program path.
+
+### Track titles: explicitly deferred on Mixxx 2.5
+
+The installed Mixxx 2.5.6 does not expose `engine.getPlayer()` in its controller
+API; 2.6 does not document it either. The earlier optional-player mapping thus
+sent empty text, causing the LCD to show NO TRACK despite a loaded deck.
+The fallback now uses the real `track_loaded` control to show TRACK LOADED,
+while continuing deck, transport and BPM information. It does not invent titles.
+Supported player APIs still forward title/artist updates and unload clearing;
+text is cached and German umlauts are transliterated for the ASCII LCD font.
+
+A concrete official 2.7-alpha-435 ARM candidate was downloaded and checked
+against its published SHA256, and its pinned source includes getPlayer. It was
+not installed or launched. The user explicitly chose to remain on 2.5 and defer
+track names; the unused downloaded installer was removed. No library/profile
+migration was performed. Do not claim that title/artist display is fixed in 2.5.
+
+Offline verification covers LED state updates from external GUI-control callbacks,
+fixed ring brightness, suppression of duplicate feedback, inactive-deck metadata,
+unload clearing, ASCII transliteration and cleanup. Native tests inspect the
+actual generated 32-LED startup frame. Physical LED placement/visibility remains
+subject to the user's smoke test after mapping reload.
+
+API references: [Mixxx 2.5 controller API](https://github.com/mixxxdj/mixxx/blob/2.5/res/controllers/engine-api.d.ts),
+[development API with Player](https://github.com/mixxxdj/mixxx/blob/main/res/controllers/engine-api.d.ts).
