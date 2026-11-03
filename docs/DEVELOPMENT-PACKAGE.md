@@ -182,15 +182,20 @@ mapping directory (open from Preferences → Controllers). Reload Mixxx, enable
 input `KORE 1 Bridge`, and choose the KORE 1 mapping. These are controller presets,
 not `.mid` music sequences. Existing root v10 mappings remain available.
 
-| Incoming MIDI, channel 1 | Action |
+| Incoming MIDI, channel 1 | Action on selected deck (Control=A, Sound=B) |
 | --- | --- |
-| Relative CC20 / CC21 | Deck A / B volume |
-| Relative CC22 / CC23 | Deck A / B pregain |
-| Relative CC24 / CC25 | Deck A / B pitch rate |
-| Relative CC26 / CC27 | Crossfader / master gain |
-| Notes36 / 38 | Select A / B for LCD feedback |
-| Notes37 / 40 | Toggle A / B playback |
-| Notes39 / 41, including Note Off | A / B momentary cue |
+| Relative CC20 | QuickEffect filter superknob |
+| Relative CC21 / CC22 | FX unit dry/wet / superknob |
+| Relative CC23–25 | FX slot 1–3 metaknobs |
+| Relative CC26 / CC27 | Slot 1 / 2 first parameter (normalized) |
+| Relative CC28 (new bridge required) | Jogwheel: library track selection |
+| Note50 / Note51 | Real Play toggle / Stop |
+| Note41, including Note Off | Esc: momentary cue |
+| Note39 | Enter: load selected track only into a stopped deck |
+| Note48 | Listen: headphone PFL |
+| Note37 | LCD backlight; no playback binding |
+
+See [the FX/browser guide](MIXXX-FX-MAPPING.md) for softkeys, presets and tests.
 
 Relative values 1–63 increment, 65–127 decrement; zero is idle. Other buttons and
 analog CCs are available for custom mappings. Metadata is optional if

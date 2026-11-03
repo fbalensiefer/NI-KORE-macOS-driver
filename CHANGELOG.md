@@ -105,3 +105,12 @@ Prior development occurred as standalone `kore-midi-v3` through `v9` prototypes 
   metadata and capture-gap controls, with dependency preflight before hardware.
 - Record passed low-level headphone measurements and rejected/clipped Mixxx
   attempts; document the unconfirmed four-pole headset adapter hypothesis.
+
+### FX/browser MIDI mapping
+
+- Correct physical Play to note 50 and Stop to 51; Backlight 37 and knob-touch
+  notes have no transport action. Select decks with Control/Sound or left/right.
+- Map eight encoders and softkeys to selected-deck QuickEffect and FX controls;
+  add protected track loading, PFL and cue release tracking across deck changes.
+- Emit wheel CC28 from KORE's wrapped 8-bit IO counter; add native decoder and
+  mapping regression tests, and install the preset in the user controller folder.

@@ -119,3 +119,8 @@ Headphone hollow-sound investigation: low-level line captures passed stereo and
 short-chirp checks; actual headset/adapter behavior is still pending. See
 [measurements and limits](docs/HEADPHONE-DIAGNOSTICS.md). Independent cueing and
 installed playback gains are unchanged by these diagnostic additions.
+
+The current Mixxx preset uses the eight encoders for selected-deck filters/FX,
+the jogwheel for library browsing, and the real Play/Stop buttons. Backlight is
+not a transport control. See [the FX/browser mapping guide](docs/MIXXX-FX-MAPPING.md)
+for the layout, user-local bridge installation and verification limits.

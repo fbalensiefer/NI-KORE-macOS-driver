@@ -992,6 +992,17 @@ static void process(const unsigned char *d,int len) {
         have_io=1;
         if(n>=5) {
             int misc=255-p[4];
+            if(io_misc_last>=0) {
+                int delta=misc-io_misc_last;
+                if(delta>128)delta-=256;
+                if(delta< -128)delta+=256;
+                /* Ambiguous half-turn is not a direction. First packet is baseline. */
+                if(delta!=128 && delta!= -128)while(delta) {
+                    int step=abs(delta)>63?63:abs(delta);
+                    midi3(0xB0,28,(unsigned char)(delta>0?step:64+step));
+                    delta+=delta>0?-step:step;
+                }
+            }
             if((verbose || controls_raw) && misc!=io_misc_last) printf("IO misc: %d (raw=%u)\n",misc,(unsigned)p[4]);
             if(controls_csv && misc!=io_misc_last) fprintf(controls_csv,"%llu,misc,0,%d,%u,0\n",(unsigned long long)clock_ms(),misc,(unsigned)p[4]);
             io_misc_last=misc;

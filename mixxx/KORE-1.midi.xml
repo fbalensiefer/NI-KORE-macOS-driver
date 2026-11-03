@@ -1,6 +1,6 @@
 <?xml version='1.0' encoding='utf-8'?>
 <MixxxControllerPreset schemaVersion="1" mixxxVersion="2.4">
-  <info>KORE 1: relative encoders, deck/play/cue buttons and optional LED/LCD feedback</info>
+  <info>KORE 1 FX + browser: real transport buttons, selected deck A/B, jogwheel library navigation</info>
   <controller id="KORE 1 Bridge">
     <scriptfiles>
       <file filename="KORE-1.js" functionprefix="Kore1" />
@@ -9,7 +9,7 @@
       <control>
         <group>[Master]</group>
         <key>Kore1.encoder</key>
-        <status>0xB0</status>
+        <status>0xb0</status>
         <midino>0x14</midino>
         <options>
           <Script-Binding />
@@ -18,7 +18,7 @@
       <control>
         <group>[Master]</group>
         <key>Kore1.encoder</key>
-        <status>0xB0</status>
+        <status>0xb0</status>
         <midino>0x15</midino>
         <options>
           <Script-Binding />
@@ -27,7 +27,7 @@
       <control>
         <group>[Master]</group>
         <key>Kore1.encoder</key>
-        <status>0xB0</status>
+        <status>0xb0</status>
         <midino>0x16</midino>
         <options>
           <Script-Binding />
@@ -36,7 +36,7 @@
       <control>
         <group>[Master]</group>
         <key>Kore1.encoder</key>
-        <status>0xB0</status>
+        <status>0xb0</status>
         <midino>0x17</midino>
         <options>
           <Script-Binding />
@@ -45,7 +45,7 @@
       <control>
         <group>[Master]</group>
         <key>Kore1.encoder</key>
-        <status>0xB0</status>
+        <status>0xb0</status>
         <midino>0x18</midino>
         <options>
           <Script-Binding />
@@ -54,7 +54,7 @@
       <control>
         <group>[Master]</group>
         <key>Kore1.encoder</key>
-        <status>0xB0</status>
+        <status>0xb0</status>
         <midino>0x19</midino>
         <options>
           <Script-Binding />
@@ -63,7 +63,7 @@
       <control>
         <group>[Master]</group>
         <key>Kore1.encoder</key>
-        <status>0xB0</status>
+        <status>0xb0</status>
         <midino>0x1a</midino>
         <options>
           <Script-Binding />
@@ -72,7 +72,7 @@
       <control>
         <group>[Master]</group>
         <key>Kore1.encoder</key>
-        <status>0xB0</status>
+        <status>0xb0</status>
         <midino>0x1b</midino>
         <options>
           <Script-Binding />
@@ -80,16 +80,16 @@
       </control>
       <control>
         <group>[Master]</group>
-        <key>Kore1.chooseDeck</key>
-        <status>0x90</status>
-        <midino>0x24</midino>
+        <key>Kore1.browse</key>
+        <status>0xb0</status>
+        <midino>0x1c</midino>
         <options>
           <Script-Binding />
         </options>
       </control>
       <control>
         <group>[Master]</group>
-        <key>Kore1.chooseDeck</key>
+        <key>Kore1.button</key>
         <status>0x90</status>
         <midino>0x26</midino>
         <options>
@@ -98,25 +98,16 @@
       </control>
       <control>
         <group>[Master]</group>
-        <key>Kore1.playButton</key>
-        <status>0x90</status>
-        <midino>0x25</midino>
+        <key>Kore1.button</key>
+        <status>0x80</status>
+        <midino>0x26</midino>
         <options>
           <Script-Binding />
         </options>
       </control>
       <control>
         <group>[Master]</group>
-        <key>Kore1.playButton</key>
-        <status>0x90</status>
-        <midino>0x28</midino>
-        <options>
-          <Script-Binding />
-        </options>
-      </control>
-      <control>
-        <group>[Master]</group>
-        <key>Kore1.cueButton</key>
+        <key>Kore1.button</key>
         <status>0x90</status>
         <midino>0x27</midino>
         <options>
@@ -125,16 +116,7 @@
       </control>
       <control>
         <group>[Master]</group>
-        <key>Kore1.cueButton</key>
-        <status>0x90</status>
-        <midino>0x29</midino>
-        <options>
-          <Script-Binding />
-        </options>
-      </control>
-      <control>
-        <group>[Master]</group>
-        <key>Kore1.cueButton</key>
+        <key>Kore1.button</key>
         <status>0x80</status>
         <midino>0x27</midino>
         <options>
@@ -143,7 +125,304 @@
       </control>
       <control>
         <group>[Master]</group>
-        <key>Kore1.cueButton</key>
+        <key>Kore1.button</key>
+        <status>0x90</status>
+        <midino>0x2a</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.button</key>
+        <status>0x80</status>
+        <midino>0x2a</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.button</key>
+        <status>0x90</status>
+        <midino>0x2c</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.button</key>
+        <status>0x80</status>
+        <midino>0x2c</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.button</key>
+        <status>0x90</status>
+        <midino>0x2d</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.button</key>
+        <status>0x80</status>
+        <midino>0x2d</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.button</key>
+        <status>0x90</status>
+        <midino>0x2e</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.button</key>
+        <status>0x80</status>
+        <midino>0x2e</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.button</key>
+        <status>0x90</status>
+        <midino>0x2f</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.button</key>
+        <status>0x80</status>
+        <midino>0x2f</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.button</key>
+        <status>0x90</status>
+        <midino>0x30</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.button</key>
+        <status>0x80</status>
+        <midino>0x30</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.button</key>
+        <status>0x90</status>
+        <midino>0x32</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.button</key>
+        <status>0x80</status>
+        <midino>0x32</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.button</key>
+        <status>0x90</status>
+        <midino>0x33</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.button</key>
+        <status>0x80</status>
+        <midino>0x33</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.button</key>
+        <status>0x90</status>
+        <midino>0x34</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.button</key>
+        <status>0x80</status>
+        <midino>0x34</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.button</key>
+        <status>0x90</status>
+        <midino>0x35</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.button</key>
+        <status>0x80</status>
+        <midino>0x35</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.button</key>
+        <status>0x90</status>
+        <midino>0x36</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.button</key>
+        <status>0x80</status>
+        <midino>0x36</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.button</key>
+        <status>0x90</status>
+        <midino>0x37</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.button</key>
+        <status>0x80</status>
+        <midino>0x37</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.button</key>
+        <status>0x90</status>
+        <midino>0x38</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.button</key>
+        <status>0x80</status>
+        <midino>0x38</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.button</key>
+        <status>0x90</status>
+        <midino>0x39</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.button</key>
+        <status>0x80</status>
+        <midino>0x39</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.button</key>
+        <status>0x90</status>
+        <midino>0x3a</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.button</key>
+        <status>0x80</status>
+        <midino>0x3a</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.button</key>
+        <status>0x90</status>
+        <midino>0x3b</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.button</key>
+        <status>0x80</status>
+        <midino>0x3b</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.button</key>
+        <status>0x90</status>
+        <midino>0x29</midino>
+        <options>
+          <Script-Binding />
+        </options>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>Kore1.button</key>
         <status>0x80</status>
         <midino>0x29</midino>
         <options>
