@@ -1,3 +1,6 @@
+> Status reference (2026-11-03): Dated capture/clock evidence. Later direct-HAL runs still showed occasional gaps; capture continuity must be checked per run, not assumed.
+> See [current status](STATUS.md) and [documentation index](INDEX.md).
+
 # Capture continuity and host-relative clock measurements — 2026-11-02
 
 ## Capture gap issue addressed

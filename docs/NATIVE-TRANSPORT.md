@@ -1,3 +1,6 @@
+> Status reference (2026-11-03): Native diagnostic transport guide/milestone. For current shared ownership, continuous-mode pools, gains and installed operation use the architecture/setup guides.
+> See [current status](STATUS.md) and [documentation index](INDEX.md).
+
 # Native transport prototype: preserve trailing zero-length time slots
 
 ## Finding and hypothesis

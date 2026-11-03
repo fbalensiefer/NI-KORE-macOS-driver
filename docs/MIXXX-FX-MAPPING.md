@@ -1,3 +1,6 @@
+> Current guide, consolidated 2026-11-03. See [STATUS](STATUS.md) for overall
+> deployment, evidence and deferred work.
+
 # KORE 1 FX and library mapping
 
 The preset is displayed as **KORE 1 FX + Browser** and uses
@@ -37,8 +40,8 @@ new physical calibration. Read left to right on the front panel:
 | Bottom (59,58,57,56) | FX unit enable | Route unit to selected deck | Previous chain preset | Next chain preset |
 
 No effect, volume, pitch or routing is forced during mapping initialization.
-Existing LED feedback is retained; this change does not claim a newly calibrated
-softkey LED layout.
+At the initial FX/browser milestone, existing LED feedback was retained.
+The later LED/LCD section below describes the installed feedback update.
 
 ## Jogwheel
 

@@ -1,5 +1,24 @@
 # Changelog
 
+## Consolidated status — 2026-11-03
+
+- Shared native MIDI/audio bridge and installed four-channel 48kHz HAL output;
+  Main 1/2 at gain 0.2, independent headphones 3/4 at gain 1.
+- Current deployment uses a user-local bridge and system HAL; atomic deferred
+  bridge updates avoid interrupting audio. The standalone CLI stays quiet by default.
+- Active Mixxx preset: KORE 1 FX + Browser. Encoders/softkeys operate FX, jog browses,
+  arrows load stopped A/B, physical Play/Stop are corrected, and feedback includes
+  bright/dim button states with fixed encoder/jog illumination.
+- Stable Mixxx 2.5.6 retained by user choice; real LCD title/artist remains deferred.
+  Deck, transport, BPM and loaded status remain available.
+- Preserve valid Main/headphone line measurements and rejected clipped/gapped runs.
+  USB restarts, loaded-headphone diagnosis, sustained quality and KORE input stay open.
+- Consolidate current setup, architecture, tests and next steps; index dated
+  records separately. Preserve original measurements and immutable archive hashes.
+
+The dated entries below record the state at each milestone, including restrictions
+and defaults later superseded. See [current status](docs/STATUS.md).
+
 ## 0.10.0 — 2026-11-01
 
 - Baseline repository for KORE 1 macOS CoreMIDI bridge.

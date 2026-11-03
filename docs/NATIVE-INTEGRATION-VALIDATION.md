@@ -1,3 +1,6 @@
+> Status reference (2026-11-03): Initial installed stereo milestone. The current device is four-channel, the login bridge is user-local, and later gains/mapping/feedback changed.
+> See [current status](STATUS.md) and [documentation index](INDEX.md).
+
 # Native MIDI/audio and system HAL validation — 2026-11-02
 
 ## Verified live

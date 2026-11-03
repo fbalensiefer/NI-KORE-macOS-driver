@@ -1,3 +1,6 @@
+> Current package/setup reference, reviewed 2026-11-03. Start with
+> [STATUS](STATUS.md), [quick setup](../README-SETUP.md) and [index](INDEX.md).
+
 # KORE 1 native MIDI/audio bridge and CoreAudio integration
 
 `kore1-final-bridge.c` contains the native USB transport, controller decoding and
@@ -77,7 +80,7 @@ ongoing operation, stopped by Ctrl+C/SIGTERM. It cannot be combined with a bound
 duration or diagnostic tone. To run the actual output bridge after installation:
 
 ```sh
-./build/kore1-final-bridge --run --coreaudio-pcm --continuous --mixxx-feedback
+./build/kore1-final-bridge --run --coreaudio-pcm --continuous --mixxx-feedback --main-gain .2 --headphone-gain 1
 ```
 
 `./run-midi.sh` starts continuous MIDI only. `./run-audio.sh` remains a bounded
@@ -231,3 +234,17 @@ replicas; NumPy is required and checked before devices open. `make echo-check`
 runs its hardware-free controls. See [headphone diagnostics](HEADPHONE-DIAGNOSTICS.md)
 for measurements, clipped/invalid runs and the pending physical headset-adapter
 check. The TRRS adapter issue remains a hypothesis, not a verified repair.
+
+## Current deployment and feedback recap
+
+The development Mac runs the user-local bridge alongside the installed HAL.
+Use `automation/install_user_bridge.py --run` for that existing deployment;
+`--defer-restart` replaces the binary without interrupting its current process.
+The helper and preset are included in the package. Do not reset the agent to an
+older system executable when updating only the user-local copy.
+
+Current preset: KORE 1 FX + Browser. Left/right load stopped A/B, the jog browses,
+and encoders/softkeys control selected-deck FX. Buttons have bright/dim feedback;
+encoder/jog illumination is fixed. Reload the mapping to activate script changes.
+The user explicitly retained Mixxx 2.5.6 and deferred real LCD track names; the
+fallback reports loaded state alongside deck/transport/BPM. No alpha was installed.

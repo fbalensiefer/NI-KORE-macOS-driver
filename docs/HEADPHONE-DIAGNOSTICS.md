@@ -1,3 +1,6 @@
+> Status reference (2026-11-03): Current investigation record with rejected and valid captures. The headset adapter hypothesis remains unconfirmed; no full headphone-load quality claim is made.
+> See [current status](STATUS.md) and [documentation index](INDEX.md).
+
 # Headphone level and hollow-sound investigation
 
 Measurements were taken on 2026-11-02; the record was completed on 2026-11-03.

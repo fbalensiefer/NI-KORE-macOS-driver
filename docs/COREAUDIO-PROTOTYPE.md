@@ -1,3 +1,6 @@
+> Status reference (2026-11-03): Historical local/offline prototype. System installation and later four-channel integration superseded its uninstalled/stereo state.
+> See [current status](STATUS.md) and [documentation index](INDEX.md).
+
 # Local CoreAudio output prototype — 2026-11-02
 
 > Historical offline milestone. The later request authorized system installation.

@@ -1,3 +1,6 @@
+> Status reference (2026-11-03): Chronological measurements: earlier stereo-only modes, gains and unresolved startup states were later superseded. Read later addenda and current status before reproducing a run.
+> See [current status](STATUS.md) and [documentation index](INDEX.md).
+
 # Stereo output validation — 2026-11-02
 
 The KORE headphone output was connected to the MAYA44 analog inputs. The test

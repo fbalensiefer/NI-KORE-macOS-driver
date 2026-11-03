@@ -1,3 +1,6 @@
+> Status reference (2026-11-03): Dated isolated-transport measurements. Shared continuous playback now uses different pools/lead and has documented scheduling failures.
+> See [current status](STATUS.md) and [documentation index](INDEX.md).
+
 # Native RX-driven silence stream — 2026-11-02
 
 ## Implementation

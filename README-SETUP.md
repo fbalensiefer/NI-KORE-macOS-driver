@@ -1,85 +1,90 @@
-> Historical automation setup package. The current repository entry points are
-> documented in README.md and TESTING.md; the old self-hosted runner setup below
-> is optional historical guidance, not required for native audio development.
+# Setup — current native MIDI/audio integration
 
-# NI KORE 1: automated macOS test runner
+Current reference: [status](docs/STATUS.md), [package guide](docs/DEVELOPMENT-PACKAGE.md).
+The old automated-runner handoff is preserved in
+[historical runner setup](docs/history/AUTOMATED-RUNNER-SETUP.md).
 
-Target repository: https://github.com/fbalensiefer/NI-KORE-macOS-driver
+## Build without touching hardware
 
-This is an **additive** package: copy `.github/` and `automation/` into your existing repository. It does not replace the working MIDI source. It does **not** implement or fix the KORE audio driver. It creates a reproducible test harness.
-
-## 1. Prerequisites (one-time on the Apple Silicon Mac)
-
-- macOS, Xcode Command Line Tools: `xcode-select --install`
-- Homebrew: `brew install libusb pkg-config ffmpeg`
-- NI KORE 1 connected over USB.
-- A real **stereo** audio capture device. Important: a 3.5 mm socket may be headphone OUTPUT only, or a mono headset microphone INPUT. Verify it can capture stereo line-level audio. A USB audio interface with stereo line inputs may be necessary.
-- A suitable attenuated stereo cable from KORE headphone OUT to audio interface LINE IN; keep KORE output at minimum initially. Never connect headphone output directly to an unverified mic input.
-- Do not wear headphones during initial experiments.
-
-## 2. Copy into the repository
-
-```bash
-git clone https://github.com/fbalensiefer/NI-KORE-macOS-driver.git
-cd NI-KORE-macOS-driver
-git switch -c feature/kore-automated-hardware-tests
-# Copy the automation/ and .github/ directories from this ZIP into this checkout.
-brew install libusb pkg-config ffmpeg
-bash automation/local_test.sh
-python3 automation/test_analyzer.py
-git add automation .github
-git commit -m "Add Apple Silicon KORE CI and opt-in loopback measurement"
-git push -u origin feature/kore-automated-hardware-tests
+```sh
+make development-package
+make check audio-check native-check coreaudio-check
 ```
 
-Open a PR to main; review before merging. If the repository already has workflows, keep those files and add the new workflow filenames only.
+Use macOS 12+ with a current CLT SDK including IOUSBHost, Python 3, Node,
+pkg-config and libusb-1.0. Optional `make echo-check` requires NumPy.
 
-## 3. Register a dedicated self-hosted runner
+## Fresh system installation
 
-On GitHub: Repository → Settings → Actions → Runners → New self-hosted runner → macOS ARM64.
-Follow the **current commands displayed by GitHub** to download/configure the runner. Use a dedicated non-admin macOS account; restrict access to this repository. During configuration, add the label `kore1-hardware`. Install the runner as a service using GitHub's displayed instructions, if desired.
-
-**Security**: a self-hosted runner executes repository workflow code on your Mac. Do not enable untrusted fork PRs or unrestricted third-party workflows on the hardware runner. The provided hardware workflow is manual (`workflow_dispatch`) and uses only read permissions. Keep the machine isolated from personal files and secrets. Review proposed code before execution; do not automatically merge agent PRs.
-
-## 4. Discover your real audio input
-
-```bash
-ffmpeg -f avfoundation -list_devices true -i ''
+```sh
+./build/kore1-final-bridge --install-system
+./build/kore1-final-bridge --system-status
+./build/kore1-final-bridge --install-login
 ```
 
-Find the index in the **audio devices** section (not the video devices section). Test a short capture manually:
+The explicit system install requests administrator authorization and restarts
+CoreAudio, briefly interrupting Mac audio. It preserves previous files and does
+not change audio defaults. The login installer uses Main gain 0.2 and headphone
+gain 1. Keep physical volume low when first connecting headphones.
 
-```bash
-KORE_AUDIO_INPUT_INDEX=2 bash automation/capture_loopback.sh artifacts/manual.wav
+If an administrator dialog is invisible, do not keep issuing concurrent installs.
+The user-local bridge option below still requires the system HAL to be installed.
+A previous CoreAudio initialization problem cleared after a Mac reboot; a missing
+or stuck device query is not proof that USB/audio framing is correct.
+
+## Update the current development-Mac deployment
+
+The existing agent runs a user-local bridge alongside the system HAL:
+
+```sh
+make bridge
+python3 automation/install_user_bridge.py --run
+# Or replace the file now, retaining the running process until its next restart:
+python3 automation/install_user_bridge.py --run --defer-restart
 ```
 
-Replace `2` with your actual audio device index. Listen to the captured WAV only at low volume; inspect input channels in macOS Audio MIDI Setup. Check that both left/right channels are present.
+The helper preserves the existing known agent arguments and makes backups. It
+requires that agent to exist; deferred replacement requires its user-local path.
+Do not use an older system bridge's `--install-login` to update this deployment:
+that changes the program path back to the older executable.
 
-In GitHub: Repository → Settings → Secrets and variables → Actions → Variables:
-- `KORE_AUDIO_INPUT_INDEX`: numeric index of the stereo input device
-- `KORE_HARDWARE_TEST_ENABLED`: `YES` **only after** the input and safe signal level have been verified.
+## Mixxx 2.5.6
 
-These are repository **variables**, not credentials.
+Copy both `mixxx/KORE-1.js` and `mixxx/KORE-1.midi.xml` into Mixxx's user controller
+folder (Preferences -> Controllers -> mapping folder). On the sandboxed Mac it is
+`~/Library/Containers/org.mixxx.mixxx/Data/Library/Application Support/Mixxx/controllers`.
+Select **KORE 1 FX + Browser** for input **KORE 1 Bridge**, enable it and route
+feedback to **KORE 1 Feedback**. Reload the mapping after replacing files, or
+restart Mixxx when convenient; do not interrupt a performance for an update.
 
-## 5. Run a test
+Configure Core Audio at **48000 Hz** using **KORE 1 Experimental Output**:
 
-Actions → `KORE static CI` runs on pushes/PRs with GitHub-hosted macOS.
-Actions → `KORE hardware test (manual)` → Run workflow.
+| Mixxx output | Device channels |
+|---|---|
+| Main | 1–2 |
+| Headphones | 3–4 |
 
-The hardware job deliberately **does not start experimental USB audio output**. It records the connected input for five seconds, expecting an externally started low-level 440 Hz stereo sine. Until we have a bounded, reviewed, safe playback command, this avoids repeating the high-frequency noise from earlier experiments. No physical sound means the measurement correctly fails.
+[Control layout](docs/MIXXX-FX-MAPPING.md): Control/Sound select A/B, jog browses,
+left/right load A/B only when stopped, Play/Stop are the physical transport,
+Listen is PFL, Esc is cue. Encoders/softkeys operate selected-deck filters/FX.
+Choose an FX preset and enable deck routing before expecting an empty slot to act.
+Button feedback is bright/dim; encoder/jog lighting stays on. LCD title/artist is
+explicitly deferred on 2.5; deck, play state, BPM and loaded state remain available.
 
-The analyzer accepts a 48 kHz, stereo, 16-bit WAV, measures RMS, peak and approximate tone frequency, and emits `artifacts/audio-report.json`. A pass demonstrates a 440 Hz signal on the capture input; it does **not by itself** prove that the KORE USB protocol is correct unless the physical input is demonstrably connected to the KORE headphone output.
+## Manual operation and removal
 
-## 6. Next step for actual autonomous development
+Run only one KORE USB owner. Stop/remove the login agent before a manual native
+probe or libusb bridge. Do not start manual PCM while the agent holds its lease.
+For explicit manual application playback, include the intended gains: the CLI
+otherwise keeps its very quiet 0.00025 default.
 
-1. Implement deterministic CAIAQ packet-unit tests based on the original Linux `snd-usb-caiaq` implementation.
-2. Build a bounded USB playback test with explicit 2-second maximum, zero/default volume, and kill-on-error.
-3. Connect that command to `hardware_test.sh` only after manual safety review.
-4. Configure a coding agent to create PRs from failing CI reports; never let untrusted PR code run directly on your hardware runner.
-5. Add audio output measurement and regression thresholds once the first verified waveform is obtained.
+```sh
+# Only after stopping the login service:
+./build/kore1-final-bridge --run --coreaudio-pcm --continuous --mixxx-feedback --main-gain .2 --headphone-gain 1
+```
 
-**Limits**: GitHub Actions schedules/executes tests, but does not itself write code or independently repair the driver. Autonomous coding requires a separately configured agent with repository permissions. The Mac must remain powered on, awake, network-connected and attached to the KORE 1.
-
-## Source code licensing
-
-Retain the repository's original license and copyright notices. Any port of Linux CAIAQ code must preserve applicable GPL obligations and attribution.
+Removal commands are `--uninstall-login` and `--uninstall-system`; the latter
+requires administrator authorization and restarts CoreAudio. User-local backups
+remain in `~/Library/Application Support/KORE1/Backups`, system backups in
+`/Library/Application Support/KORE1/Backups`. Consult the package guide before
+restoring an agent or binary so the intended path and version remain aligned.

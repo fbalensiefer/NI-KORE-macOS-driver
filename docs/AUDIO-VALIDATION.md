@@ -1,3 +1,6 @@
+> Status reference (2026-11-03): Historical libusb/Linux-parity investigation. Native shared transport is the current path; retain failed submissions as evidence.
+> See [current status](STATUS.md) and [documentation index](INDEX.md).
+
 # Audio validation milestone — 2026-11-02
 
 Earlier standalone filenames in this research log now live under
