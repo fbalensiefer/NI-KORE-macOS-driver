@@ -96,3 +96,12 @@ Prior development occurred as standalone `kore-midi-v3` through `v9` prototypes 
   Headphones 1. Keep diagnostic tone caps and the quiet standalone CLI default.
 - Verify Main stereo at gains 0.1/0.2 against the user's known MAYA44 wiring;
   document capture-start timeout and unverified analog headphone unity level.
+
+### Headphone diagnostics
+
+- Add independent test-signal level and default loopback probes to 0.1 to reduce
+  capture clipping; keep installed playback gain and independent cue routing.
+- Add optional NumPy matched-chirp analysis and offline injected-echo, clipping,
+  metadata and capture-gap controls, with dependency preflight before hardware.
+- Record passed low-level headphone measurements and rejected/clipped Mixxx
+  attempts; document the unconfirmed four-pole headset adapter hypothesis.

@@ -19,8 +19,9 @@ for name in ('kore1-final-bridge.c','COPYING','NOTICE.md'):
     shutil.copy2(ROOT/name,DEST/name)
 shutil.copy2(ROOT/'docs/DEVELOPMENT-PACKAGE.md',DEST/'README.md')
 shutil.copy2(ROOT/'docs/STEREO-OUTPUT-RESULTS.md',DEST/'STEREO-OUTPUT-RESULTS.md')
+shutil.copy2(ROOT/'docs/HEADPHONE-DIAGNOSTICS.md',DEST/'HEADPHONE-DIAGNOSTICS.md')
 (DEST/'automation').mkdir()
-for name in ('coreaudio_loopback.py','analyze_stereo_capture.py','measure_native_quality.py','analyze_native_capture.py'):
+for name in ('coreaudio_loopback.py','analyze_stereo_capture.py','measure_native_quality.py','analyze_native_capture.py','analyze_echo_capture.py'):
     shutil.copy2(ROOT/'automation'/name,DEST/'automation'/name)
 commit=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()
 dirty=bool(subprocess.check_output(['git','status','--porcelain'],cwd=ROOT,text=True).strip())

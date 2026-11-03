@@ -18,5 +18,11 @@ int main(void) {
     assert(crossings[0]>=878 && crossings[0]<=882 && crossings[1]>=1318 && crossings[1]<=1322);
     for(unsigned ch=0;ch<2;ch++)assert(sqrt(power[ch]/active[ch])>.70 && sqrt(power[ch]/active[ch])<.71);
     float frame[2];kore_test_signal(100000,0,frame);assert(frame[0]==0 && frame[1]==0);
+    for(unsigned n=0;n<120000;n++) {
+        float pulse[2];kore_echo_signal(n,pulse);
+        assert(isfinite(pulse[0]) && fabsf(pulse[0])<=1 && isfinite(pulse[1]) && fabsf(pulse[1])<=1);
+        assert((n>=24000 && n<26400) || pulse[0]==0);
+        assert((n>=72000 && n<74400) || pulse[1]==0);
+    }
     puts("PASS bounded stereo signal: independent 440/660Hz channels, left/right/dual windows, fades and silence");
 }

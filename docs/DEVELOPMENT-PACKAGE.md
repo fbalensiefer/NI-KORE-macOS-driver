@@ -215,3 +215,13 @@ bridge after stopping the login agent; it never changes a running service's gain
 
 Mixxx XML route names and zero-based channel indices follow the upstream
 [AudioOutput serializer](https://github.com/mixxxdj/mixxx/blob/main/src/soundio/soundmanagerutil.cpp).
+
+## Headphone diagnosis
+
+The loopback helper's test signal now defaults to 0.1 (-20 dB), independently of
+bridge gains. `--signal-level` selects a different explicit test level. The
+optional `--echo-test --headphones` uses short chirps to search for delayed
+replicas; NumPy is required and checked before devices open. `make echo-check`
+runs its hardware-free controls. See [headphone diagnostics](HEADPHONE-DIAGNOSTICS.md)
+for measurements, clipped/invalid runs and the pending physical headset-adapter
+check. The TRRS adapter issue remains a hypothesis, not a verified repair.

@@ -114,3 +114,8 @@ playback, and current recordings do not establish production audio quality.
 
 GPL licensing and attribution are retained; see [COPYING](COPYING) and
 [NOTICE.md](NOTICE.md). No proprietary firmware is included.
+
+Headphone hollow-sound investigation: low-level line captures passed stereo and
+short-chirp checks; actual headset/adapter behavior is still pending. See
+[measurements and limits](docs/HEADPHONE-DIAGNOSTICS.md). Independent cueing and
+installed playback gains are unchanged by these diagnostic additions.
