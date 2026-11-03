@@ -58,7 +58,12 @@ Kore1.button = function(channel,control,value,status) {
     else if(control===39) {if(!engine.getValue(group,'play'))Kore1.pulse(group,'LoadSelectedTrack');} // Enter: protect playing deck
     else if(control===48)script.toggleControl(group,'pfl'); // Listen
     else if(control===46 || control===45)engine.setValue('[Playlist]','SelectTrackKnob',control===46?-1:1);
-    else if(control===47 || control===44) {Kore1.deck=control===44?1:0;Kore1.updateHeader();}
+    else if(control===47 || control===44) {
+        var target=control===44?1:0,targetGroup='[Channel'+(target+1)+']';
+        if(!engine.getValue(targetGroup,'play')) {
+            Kore1.deck=target;Kore1.pulse(targetGroup,'LoadSelectedTrack');Kore1.updateHeader();
+        }
+    }
     else {
         // Softkeys left->right: 55,54,53,52 (top), 59,58,57,56 (bottom).
         var top=[55,54,53,52].indexOf(control),bottom=[59,58,57,56].indexOf(control);

@@ -10,8 +10,8 @@ application-bundle files were modified.
 
 ## Deck and transport
 
-Control selects A; Sound selects B. Left/right arrows also select A/B; the LCD
-header follows selection. The physical Play button is MIDI note 50, Stop is 51.
+Control selects A; Sound selects B. Left/right arrows load the highlighted library track directly into A/B
+and select that deck for effects/LCD feedback. A playing target is left untouched. The physical Play button is MIDI note 50, Stop is 51.
 Backlight is note 37 and never starts playback. Esc (41) is momentary cue; its
 release always goes back to the deck where it was pressed, even after switching
 decks. Listen (48) toggles PFL. Enter (39) loads the selected library track into
@@ -95,3 +95,7 @@ output. Desktop accessibility returned `AXError.cannotComplete`, and the
 available log had not yet confirmed opening the new script; live preset loading
 and physical control behavior must not be reported as verified. A physical
 Play/Backlight/wheel smoke-test was requested from the user.
+
+Physical smoke-test feedback: the user confirmed Play/Backlight/wheel operation.
+The later direct arrow-loading change is regression-tested offline and requires
+reloading the script in Mixxx before its physical behavior can be confirmed.

@@ -31,6 +31,18 @@ for(let value of [0,64,128,255])assert.equal(k.delta(value),0);
 const calls=[];const set=engine.setValue;engine.setValue=(g,key,v)=>{calls.push([g,key,v]);set(g,key,v);};
 engine.setValue('[Channel2]','play',1);k.button(0,39,100,0x90);assert(!calls.some(c=>c[1]==='LoadSelectedTrack'));
 engine.setValue('[Channel2]','play',0);k.button(0,39,100,0x90);assert.deepEqual(calls.slice(-2),[['[Channel2]','LoadSelectedTrack',1],['[Channel2]','LoadSelectedTrack',0]]);
+// Arrow direction determines destination, independent of the previously selected deck.
+engine.setValue('[Channel1]','play',0);engine.setValue('[Channel2]','play',0);
+k.deck=1;k.button(0,47,100,0x90);assert.equal(k.deck,0);
+assert(calls.slice(-2).every(c=>c[0]==='[Channel1]' && c[1]==='LoadSelectedTrack'));
+k.button(0,44,100,0x90);assert.equal(k.deck,1);
+assert.deepEqual(calls.slice(-2),[['[Channel2]','LoadSelectedTrack',1],['[Channel2]','LoadSelectedTrack',0]]);
+for(const [note,deck] of [[47,1],[44,2]]) {
+    engine.setValue('[Channel'+deck+']','play',1);
+    let before=calls.length;k.button(0,note,100,0x90);
+    assert.equal(calls.length,before); // playing target untouched
+    k.button(0,note,100,0x80);assert.equal(calls.length,before); // release never loads
+}
 k.sendText(1,1,'é'.repeat(100));const text=sent[sent.length-1];assert.equal(text.length,57);assert(text.slice(6,-1).every(x=>x===63));
 for(const msg of sent){assert(msg.every(x=>Number.isInteger(x)&&x>=0&&x<=255));if(msg.length===3){assert.equal(msg[0],0xbf);assert(msg[1]<128&&msg[2]<128);}}
 k.shutdown();assert(connections.every(c=>c.disconnected));assert(signals.every(s=>s.callbacks.size===0));

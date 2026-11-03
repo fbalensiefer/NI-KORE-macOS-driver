@@ -114,3 +114,6 @@ Prior development occurred as standalone `kore-midi-v3` through `v9` prototypes 
   add protected track loading, PFL and cue release tracking across deck changes.
 - Emit wheel CC28 from KORE's wrapped 8-bit IO counter; add native decoder and
   mapping regression tests, and install the preset in the user controller folder.
+
+- Follow-up: left/right arrow buttons now directly load the selected library track
+  into Deck A/B and select that deck, while protecting a playing destination.

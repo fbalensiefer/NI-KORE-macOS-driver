@@ -192,6 +192,7 @@ not `.mid` music sequences. Existing root v10 mappings remain available.
 | Note50 / Note51 | Real Play toggle / Stop |
 | Note41, including Note Off | Esc: momentary cue |
 | Note39 | Enter: load selected track only into a stopped deck |
+| Notes47 / 44 | Left/right: load selected track into stopped Deck A / B |
 | Note48 | Listen: headphone PFL |
 | Note37 | LCD backlight; no playback binding |
 
