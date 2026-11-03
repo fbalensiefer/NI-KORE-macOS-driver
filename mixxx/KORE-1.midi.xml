@@ -1,6 +1,10 @@
 <?xml version='1.0' encoding='utf-8'?>
 <MixxxControllerPreset schemaVersion="1" mixxxVersion="2.4">
-  <info>KORE 1 FX + browser: real transport buttons, selected deck A/B, jogwheel library navigation</info>
+  <info>
+    <name>KORE 1 FX + Browser</name>
+    <author>NI-KORE macOS driver project</author>
+    <description>Selected-deck filter and FX controls; library jogwheel; real Play/Stop; requires CC28 bridge</description>
+  </info>
   <controller id="KORE 1 Bridge">
     <scriptfiles>
       <file filename="KORE-1.js" functionprefix="Kore1" />

@@ -3,6 +3,7 @@ from pathlib import Path
 import xml.etree.ElementTree as ET
 root=Path(__file__).resolve().parents[1]
 e=ET.parse(root/'mixxx/KORE-1.midi.xml')
+assert e.findtext('info/name')=='KORE 1 FX + Browser'
 routes={(int(c.findtext('status'),16),int(c.findtext('midino'),16)):c.findtext('key') for c in e.findall('.//control')}
 for note in (50,51,41,38,42,39):
     assert routes[0x90,note]==routes[0x80,note]=='Kore1.button'

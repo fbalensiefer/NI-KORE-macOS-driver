@@ -1,6 +1,7 @@
 # KORE 1 FX and library mapping
 
-The active preset is `mixxx/KORE-1.midi.xml` with `KORE-1.js`. Archived root v10
+The preset is displayed as **KORE 1 FX + Browser** and uses
+`mixxx/KORE-1.midi.xml` with `KORE-1.js`. Archived root v10
 presets are preserved, but are not this layout. On the user's sandboxed Mixxx,
 the active preset previously pointed into the application bundle at
 `KORE-1-Mixxx-v10.1.midi.xml`. The new files were copied into the user controllers
